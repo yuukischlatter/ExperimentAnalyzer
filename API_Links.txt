@@ -1,0 +1,5 @@
+http://localhost:5000/api/experiments/count
+
+http://localhost:5000/api/experiments
+
+http://localhost:5000/swagger
