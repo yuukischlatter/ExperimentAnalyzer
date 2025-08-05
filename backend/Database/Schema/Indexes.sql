@@ -15,3 +15,7 @@ CREATE INDEX IF NOT EXISTS idx_experiments_date_files ON experiments(
     has_acceleration_csv,
     has_weld_journal
 );
+
+-- Binary oscilloscope cache indexes
+CREATE INDEX IF NOT EXISTS idx_bin_cache_experiment ON bin_overview_cache(experiment_id);
+CREATE INDEX IF NOT EXISTS idx_bin_cache_cached_at ON bin_overview_cache(cached_at);

@@ -1,7 +1,9 @@
 using System.Data;
+using System.Text.Json;
 using Dapper;
 using ExperimentAnalyzer.Database.Interfaces;
 using ExperimentAnalyzer.Models.Core;
+using ExperimentAnalyzer.Models.Data;
 
 namespace ExperimentAnalyzer.Database.Repositories;
 
@@ -342,6 +344,68 @@ public class ExperimentRepository : IExperimentRepository
     public async Task<int> GetExperimentCountAsync()
     {
         const string sql = "SELECT COUNT(*) FROM experiments";
+        return await _connection.QuerySingleAsync<int>(sql);
+    }
+
+    // 🆕 Binary oscilloscope cache operations
+    public async Task<BinOscilloscopeData?> GetCachedOverviewAsync(string experimentId)
+    {
+        const string sql = @"
+            SELECT overview_data 
+            FROM bin_overview_cache 
+            WHERE experiment_id = @ExperimentId";
+        
+        var jsonData = await _connection.QuerySingleOrDefaultAsync<string?>(sql, new { ExperimentId = experimentId });
+        
+        if (string.IsNullOrEmpty(jsonData))
+        {
+            return null;
+        }
+        
+        try
+        {
+            return JsonSerializer.Deserialize<BinOscilloscopeData>(jsonData);
+        }
+        catch (JsonException ex)
+        {
+            // Log error and return null if JSON is corrupted
+            Console.WriteLine($"Failed to deserialize cached overview for {experimentId}: {ex.Message}");
+            return null;
+        }
+    }
+
+    public async Task SaveOverviewCacheAsync(string experimentId, BinOscilloscopeData overviewData)
+    {
+        const string sql = @"
+            INSERT OR REPLACE INTO bin_overview_cache (
+                experiment_id, 
+                overview_data, 
+                cached_at
+            ) VALUES (
+                @ExperimentId, 
+                @OverviewData, 
+                @CachedAt
+            )";
+        
+        var jsonData = JsonSerializer.Serialize(overviewData);
+        
+        await _connection.ExecuteAsync(sql, new
+        {
+            ExperimentId = experimentId,
+            OverviewData = jsonData,
+            CachedAt = DateTime.UtcNow.ToString("yyyy-MM-dd HH:mm:ss")
+        });
+    }
+
+    public async Task ClearCachedOverviewAsync(string experimentId)
+    {
+        const string sql = "DELETE FROM bin_overview_cache WHERE experiment_id = @ExperimentId";
+        await _connection.ExecuteAsync(sql, new { ExperimentId = experimentId });
+    }
+
+    public async Task<int> GetCachedOverviewCountAsync()
+    {
+        const string sql = "SELECT COUNT(*) FROM bin_overview_cache";
         return await _connection.QuerySingleAsync<int>(sql);
     }
 

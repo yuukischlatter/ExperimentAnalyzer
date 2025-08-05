@@ -4,6 +4,8 @@ using Microsoft.Extensions.FileProviders;
 using ExperimentAnalyzer.Database.Interfaces;
 using ExperimentAnalyzer.Database.Repositories;
 using ExperimentAnalyzer.Services.Startup;
+using ExperimentAnalyzer.Services.Data;
+using ExperimentAnalyzer.Configuration;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +29,13 @@ builder.Services.AddScoped<IExperimentRepository, ExperimentRepository>();
 builder.Services.AddScoped<DirectoryScanner>();
 builder.Services.AddScoped<JournalParser>();
 builder.Services.AddScoped<StartupDataService>();
+
+// Binary oscilloscope services
+builder.Services.AddScoped<IBinFileProcessor, BinFileProcessor>();
+
+// Configuration
+builder.Services.Configure<BinOscilloscopeSettings>(
+    builder.Configuration.GetSection("BinOscilloscopeSettings"));
 
 var app = builder.Build();
 
@@ -78,7 +87,8 @@ using (var scope = app.Services.CreateScope())
         if (success)
         {
             var count = await repository.GetExperimentCountAsync();
-            Console.WriteLine($"Data initialization completed successfully. Total experiments: {count}");
+            var cacheCount = await repository.GetCachedOverviewCountAsync();
+            Console.WriteLine($"Data initialization completed successfully. Total experiments: {count}, Cached overviews: {cacheCount}");
         }
         else
         {

@@ -42,3 +42,13 @@ CREATE TABLE IF NOT EXISTS experiment_metadata (
     
     FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
 );
+
+-- Cached overview data for binary oscilloscope files
+-- Stores ~5000 decimated points for instant loading
+CREATE TABLE IF NOT EXISTS bin_overview_cache (
+    experiment_id TEXT PRIMARY KEY,
+    overview_data TEXT NOT NULL,            -- JSON serialized BinOscilloscopeData
+    cached_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    
+    FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
+);
