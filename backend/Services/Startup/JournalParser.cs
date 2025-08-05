@@ -82,6 +82,19 @@ public class JournalParser : BaseStartupService
             var value = parts[0].Trim();
             var key = parts[1].Trim();
             
+            // Special handling for rail label entries (they have 5 parts)
+            // Format: "P65-2;DT350;49531 104 12 Bereits 2x geschweisst;Schienenetikett Einlaufseite;-"
+            if (parts.Length >= 4)
+            {
+                var possibleKey = parts[3].Trim().ToLowerInvariant();
+                if (possibleKey.Contains("schienenetikett"))
+                {
+                    key = possibleKey;
+                    // For rail labels, we need the first two parts: "P65-2;DT350"
+                    value = $"{parts[0].Trim()};{parts[1].Trim()}";
+                }
+            }
+            
             switch (key.ToLowerInvariant())
             {
                 case "program-nr":

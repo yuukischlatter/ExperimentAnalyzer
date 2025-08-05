@@ -84,6 +84,8 @@ public class ExperimentRepository : IExperimentRepository
                 m.grinding_type as GrindingType,
                 m.grinder as Grinder,
                 m.comments as Comments,
+                m.einlaufseite as Einlaufseite,
+                m.auslaufseite as Auslaufseite,
                 m.parsed_at as ParsedAt
             FROM experiments e
             LEFT JOIN experiment_metadata m ON e.id = m.experiment_id
@@ -149,12 +151,12 @@ public class ExperimentRepository : IExperimentRepository
                 experiment_id, program_number, program_name, material, shape, operator,
                 oil_temperature, crown_measurement_interval, crown_einlauf_warm, 
                 crown_auslauf_warm, crown_einlauf_kalt, crown_auslauf_kalt,
-                grinding_type, grinder, comments, parsed_at
+                grinding_type, grinder, comments, einlaufseite, auslaufseite, parsed_at
             ) VALUES (
                 @ExperimentId, @ProgramNumber, @ProgramName, @Material, @Shape, @Operator,
                 @OilTemperature, @CrownMeasurementInterval, @CrownEinlaufWarm,
                 @CrownAuslaufWarm, @CrownEinlaufKalt, @CrownAuslaufKalt,
-                @GrindingType, @Grinder, @Comments, @ParsedAt
+                @GrindingType, @Grinder, @Comments, @Einlaufseite, @Auslaufseite, @ParsedAt
             )";
 
         await _connection.ExecuteAsync(sql, metadata);
@@ -217,6 +219,8 @@ public class ExperimentRepository : IExperimentRepository
                 m.grinding_type as GrindingType,
                 m.grinder as Grinder,
                 m.comments as Comments,
+                m.einlaufseite as Einlaufseite,
+                m.auslaufseite as Auslaufseite,
                 m.parsed_at as ParsedAt
             FROM experiments e
             LEFT JOIN experiment_metadata m ON e.id = m.experiment_id
@@ -271,6 +275,8 @@ public class ExperimentRepository : IExperimentRepository
                 m.grinding_type as GrindingType,
                 m.grinder as Grinder,
                 m.comments as Comments,
+                m.einlaufseite as Einlaufseite,
+                m.auslaufseite as Auslaufseite,
                 m.parsed_at as ParsedAt
             FROM experiments e
             LEFT JOIN experiment_metadata m ON e.id = m.experiment_id";
