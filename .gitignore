@@ -76,6 +76,13 @@ yarn-error.log*
 # NuGet
 packages/
 
+# Pictures
+*.png
+*.bmp
+*.jpg
+*.jpeg
+*.tif
+
 # Project-specific: Don't commit experiment data path
 # (in case someone accidentally puts real data in repo)
 experiment_data/
