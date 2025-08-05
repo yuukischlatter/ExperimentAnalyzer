@@ -1,5 +1,6 @@
 using System.Data;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.FileProviders;
 using ExperimentAnalyzer.Database.Interfaces;
 using ExperimentAnalyzer.Database.Repositories;
 using ExperimentAnalyzer.Services.Startup;
@@ -33,11 +34,28 @@ var app = builder.Build();
 app.UseSwagger();
 app.UseSwaggerUI();
 
-app.UseStaticFiles();
+// Configure static file serving for frontend
+var frontendPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "frontend");
+if (Directory.Exists(frontendPath))
+{
+    Console.WriteLine($"Serving frontend files from: {frontendPath}");
+    app.UseStaticFiles(new StaticFileOptions
+    {
+        FileProvider = new PhysicalFileProvider(frontendPath),
+        RequestPath = ""
+    });
+}
+else
+{
+    Console.WriteLine($"Frontend directory not found at: {frontendPath}");
+    Console.WriteLine("Falling back to wwwroot directory");
+    app.UseStaticFiles();
+}
+
 app.UseRouting();
 app.MapControllers();
 
-// Serve frontend files
+// Serve index.html for any non-API routes (SPA fallback)
 app.MapFallbackToFile("index.html");
 
 // Check for command line arguments

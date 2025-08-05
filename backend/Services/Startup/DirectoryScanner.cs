@@ -37,6 +37,13 @@ public class DirectoryScanner : BaseStartupService
             {
                 var experimentId = Path.GetFileName(folderPath);
                 
+                // Check if journal file exists - skip entire experiment if missing
+                if (!HasJournalFile(folderPath))
+                {
+                    Console.WriteLine($"Skipped experiment (no journal): {experimentId}");
+                    continue; // Skip completely - don't save to database
+                }
+                
                 // Skip if already processed (unless force refresh)
                 if (!forceRefresh && await _repository.ExperimentExistsAsync(experimentId))
                 {
@@ -91,6 +98,15 @@ public class DirectoryScanner : BaseStartupService
         }
     }
     
+    private bool HasJournalFile(string folderPath)
+    {
+        var journalFiles = Directory.GetFiles(folderPath, "*", SearchOption.AllDirectories)
+            .Where(f => f.EndsWith("Schweissjournal.txt", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+            
+        return journalFiles.Any();
+    }
+    
     private async Task<Experiment> ScanExperimentFolderAsync(string experimentId, string folderPath)
     {
         // Get all files recursively (handles both flat and nested structures)
@@ -113,7 +129,8 @@ public class DirectoryScanner : BaseStartupService
             HasTcp5File = HasFileType(files, experimentId + "_original(manuell).tpc5"),
             HasWeldJournal = HasFileType(files, "Schweissjournal.txt"),
             HasCrownMeasurements = HasFileType(files, "Geradheit+Versatz.xlsx"),
-            HasAmbientTemperature = HasFilePattern(files, "temperature*.csv")
+            HasAmbientTemperature = HasFilePattern(files, "temperature*.csv"),
+            HasPhotos = HasImageFile(files)
         };
     }
     
@@ -142,6 +159,12 @@ public class DirectoryScanner : BaseStartupService
         var hasOldFormat = files.Any(f => f.EndsWith("redalsa.csv", StringComparison.OrdinalIgnoreCase));
         
         return hasNewFormat || hasOldFormat;
+    }
+    
+    private static bool HasImageFile(string[] files)
+    {
+        var imageExtensions = new[] { ".jpg", ".jpeg", ".png", ".bmp", ".tiff", ".gif" };
+        return files.Any(f => imageExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
     }
     
     private static DateTime? ExtractDateFromFolderName(string folderName)

@@ -1,0 +1,138 @@
+<!-- Experiment Browser Module Template -->
+<div class="experiment-browser-container">
+    
+    <!-- Module Header -->
+    <div class="experiment-browser-header card-header">
+        <div class="flex items-center justify-between">
+            <div class="experiment-browser-title">
+                <h3 class="card-title">Experiment Browser</h3>
+                <p class="text-sm text-secondary">Select an experiment to view detailed analysis</p>
+            </div>
+            
+            <div class="experiment-browser-actions">
+                <button data-bind="refreshBtn" class="btn btn-secondary btn-sm" title="Refresh experiment list">
+                    <span>↻</span> Refresh
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Filter and Search Controls -->
+    <div class="experiment-browser-controls card-body">
+        <div class="controls-grid">
+            
+            <!-- Search Input -->
+            <div class="control-group">
+                <label for="search-input" class="control-label">Search</label>
+                <input 
+                    data-bind="searchInput" 
+                    id="search-input"
+                    type="text" 
+                    class="form-input" 
+                    placeholder="Search by ID, operator, program..."
+                    autocomplete="off"
+                >
+            </div>
+            
+            <!-- Sort By Select -->
+            <div class="control-group">
+                <label for="sort-select" class="control-label">Sort By</label>
+                <select data-bind="sortSelect" id="sort-select" class="form-input form-select">
+                    <option value="date-desc">Date (Newest First)</option>
+                    <option value="date-asc">Date (Oldest First)</option>
+                    <option value="id-asc">Experiment ID (A-Z)</option>
+                    <option value="id-desc">Experiment ID (Z-A)</option>
+                    <option value="operator-asc">Operator (A-Z)</option>
+                    <option value="program-asc">Program Number</option>
+                    <option value="material-asc">Material</option>
+                    <option value="shape-asc">Shape</option>
+                </select>
+            </div>
+            
+            <!-- Filter By Select -->
+            <div class="control-group">
+                <label for="filter-select" class="control-label">Filter By</label>
+                <select data-bind="filterSelect" id="filter-select" class="form-input form-select">
+                    <option value="">All Experiments</option>
+                    <option value="operator">Operator</option>
+                    <option value="program">Program</option>
+                    <option value="material">Material</option>
+                    <option value="shape">Shape</option>
+                </select>
+            </div>
+            
+            <!-- Filter Value Input (appears when filter is selected) -->
+            <div class="control-group" data-bind="filterValueGroup" style="display: none;">
+                <label for="filter-value" class="control-label">Filter Value</label>
+                <input 
+                    data-bind="filterValueInput" 
+                    id="filter-value"
+                    type="text" 
+                    class="form-input" 
+                    placeholder="Enter filter value..."
+                    autocomplete="off"
+                >
+            </div>
+            
+        </div>
+        
+        <!-- Results Summary -->
+        <div class="results-summary">
+            <span data-bind="resultsCount" class="text-sm text-secondary">
+                Loading experiments...
+            </span>
+        </div>
+    </div>
+    
+    <!-- Experiment Table -->
+    <div class="experiment-browser-content">
+        
+        <!-- Loading State -->
+        <div data-bind="loadingSpinner" class="loading-state hidden">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <p>Loading experiments...</p>
+            </div>
+        </div>
+        
+        <!-- Error State -->
+        <div data-bind="errorMessage" class="error-state hidden">
+            <div class="error-content">
+                <h4>Unable to Load Experiments</h4>
+                <p data-bind="errorText">An error occurred while loading experiment data.</p>
+                <button data-bind="retryBtn" class="btn btn-primary btn-sm">Retry</button>
+            </div>
+        </div>
+        
+        <!-- Empty State -->
+        <div data-bind="emptyState" class="empty-state hidden">
+            <div class="empty-content">
+                <h4>No Experiments Found</h4>
+                <p>No experiments match your current search and filter criteria.</p>
+                <button data-bind="clearFiltersBtn" class="btn btn-secondary btn-sm">Clear Filters</button>
+            </div>
+        </div>
+        
+        <!-- Experiments Table -->
+        <div data-bind="tableContainer" class="table-container hidden">
+            <table data-bind="experimentsTable" class="table experiment-browser-table">
+                <thead>
+                    <tr>
+                        <th class="col-id">ID</th>
+                        <th class="col-date">Date</th>
+                        <th class="col-program">Program</th>
+                        <th class="col-material">Material</th>
+                        <th class="col-shape">Shape</th>
+                        <th class="col-operator">Operator</th>
+                        <th class="col-files">Available Files</th>
+                    </tr>
+                </thead>
+                <tbody data-bind="experimentsTableBody">
+                    <!-- Experiment rows populated by JavaScript -->
+                </tbody>
+            </table>
+        </div>
+        
+    </div>
+    
+</div>

@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Experiment Analyzer - Schlatter</title>
+    
+    <!-- Favicon -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico">
+
+    <!-- CSS Stylesheets -->
+    <link rel="stylesheet" href="/shared/styles/variables.css">
+    <link rel="stylesheet" href="/shared/styles/common.css">
+
+    <!-- Preload critical resources -->
+    <link rel="preload" href="/shared/styles/variables.css" as="style">
+    <link rel="preload" href="/shared/styles/common.css" as="style">
+</head>
+<body>
+    <!-- Main Application Container -->
+    <div id="app" class="app-container">
+
+        <!-- Application Header -->
+        <header class="app-header">
+            <div class="container">
+                <div class="flex items-center justify-between">
+                    <div class="app-title">
+                        <h1>Experiment Analyzer</h1>
+                        <p class="text-primary text-sm">Welding Data Analysis System</p>
+                    </div>
+
+                    <div class="app-logo">
+                        <img src="/logo.png" alt="Schlatter" class="schlatter-logo-img">
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content Area -->
+        <main class="app-main">
+            <div class="container">
+
+                <!-- Module Container: Experiment Browser -->
+                <section id="experiment-browser-container" class="module-container">
+                    <!-- Experiment browser module will be loaded here -->
+                </section>
+
+                <!-- Module Container: Data Visualization Modules -->
+                <section id="data-modules-container" class="module-container hidden">
+                    <div class="data-modules-grid">
+
+                        <!-- Binary Oscilloscope Module -->
+                        <div id="bin-oscilloscope-container" class="data-module-slot hidden">
+                            <!-- bin-oscilloscope module loads here -->
+                        </div>
+
+                        <!-- Acceleration Data Module -->
+                        <div id="acceleration-container" class="data-module-slot hidden">
+                            <!-- acceleration module loads here -->
+                        </div>
+
+                        <!-- Position Sensor Module -->
+                        <div id="position-container" class="data-module-slot hidden">
+                            <!-- position module loads here -->
+                        </div>
+
+                        <!-- Tensile Strength Module -->
+                        <div id="tensile-strength-container" class="data-module-slot hidden">
+                            <!-- tensile-strength module loads here -->
+                        </div>
+
+                        <!-- Photo Gallery Module -->
+                        <div id="photo-gallery-container" class="data-module-slot hidden">
+                            <!-- photo-gallery module loads here -->
+                        </div>
+
+                        <!-- Thermal IR Module -->
+                        <div id="thermal-ir-container" class="data-module-slot hidden">
+                            <!-- thermal-ir module loads here -->
+                        </div>
+
+                        <!-- TCP5 Oscilloscope Module -->
+                        <div id="tcp5-oscilloscope-container" class="data-module-slot hidden">
+                            <!-- tcp5-oscilloscope module loads here -->
+                        </div>
+
+                        <!-- Weld Journal Module -->
+                        <div id="weld-journal-container" class="data-module-slot hidden">
+                            <!-- weld-journal module loads here -->
+                        </div>
+
+                        <!-- Crown Measurements Module -->
+                        <div id="crown-measurements-container" class="data-module-slot hidden">
+                            <!-- crown-measurements module loads here -->
+                        </div>
+
+                        <!-- Ambient Temperature Module -->
+                        <div id="ambient-temperature-container" class="data-module-slot hidden">
+                            <!-- ambient-temperature module loads here -->
+                        </div>
+
+                    </div>
+                </section>
+
+                <!-- Module Container: Analysis Modules -->
+                <section id="analysis-modules-container" class="module-container hidden">
+                    <div class="analysis-modules-grid">
+
+                        <!-- Multi-Axis Plotter Module -->
+                        <div id="multi-axis-plotter-container" class="analysis-module-slot hidden">
+                            <!-- multi-axis-plotter module loads here -->
+                        </div>
+
+                        <!-- FFT Analyzer Module -->
+                        <div id="fft-analyzer-container" class="analysis-module-slot hidden">
+                            <!-- fft-analyzer module loads here -->
+                        </div>
+
+                        <!-- Comparison Viewer Module -->
+                        <div id="comparison-viewer-container" class="analysis-module-slot hidden">
+                            <!-- comparison-viewer module loads here -->
+                        </div>
+
+                    </div>
+                </section>
+
+            </div>
+        </main>
+
+        <!-- Application Footer -->
+        <footer class="app-footer">
+            <div class="container">
+                <div class="flex items-center justify-between">
+                    <div class="footer-info">
+                        <p class="text-sm text-muted">
+                            © 2025 Schlatter Industries AG - Experiment Analyzer v1.0
+                        </p>
+                    </div>
+                    <div class="footer-status">
+                        <span id="connection-status" class="text-sm text-muted">
+                            Connected to API
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </footer>
+
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="app-loading" class="app-loading hidden">
+        <div class="loading-content">
+            <div class="loading-spinner"></div>
+            <p>Loading Experiment Analyzer...</p>
+        </div>
+    </div>
+
+    <!-- Error Overlay -->
+    <div id="app-error" class="app-error hidden">
+        <div class="error-content">
+            <h3>Application Error</h3>
+            <p id="error-message">An error occurred while loading the application.</p>
+            <button id="retry-button" class="btn btn-primary">Retry</button>
+        </div>
+    </div>
+
+    <!-- JavaScript Application -->
+    <script src="/app.js"></script>
+
+    <!-- Module Scripts (loaded dynamically by app.js) -->
+    <!-- experiment-browser module will be loaded first -->
+    <!-- Other modules loaded on demand when experiments are selected -->
+
+</body>
+</html>
+
+<style>
+/* Application-specific styles (not in common.css) */
+.app-container {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.app-header {
+    background-color: var(--bg-white);
+    color: var(--text-primary);
+    padding: var(--spacing-md) 0;
+    box-shadow: var(--shadow-md);
+}
+
+.app-title h1 {
+    color: var(--schlatter-blue);
+    font-size: var(--font-xxxl);
+    font-weight: var(--font-semibold);
+    margin: 0;
+}
+
+.schlatter-logo-img {
+    height: 100px;
+    width: auto;
+    max-width: 400px;
+}
+
+.app-main {
+    flex: 1;
+    padding: var(--spacing-lg) 0;
+    background-color: var(--bg-light);
+}
+
+.module-container {
+    margin-bottom: var(--spacing-xl);
+}
+
+.data-modules-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    gap: var(--spacing-lg);
+    margin-top: var(--spacing-lg);
+}
+
+.analysis-modules-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: var(--spacing-lg);
+    margin-top: var(--spacing-lg);
+}
+
+.data-module-slot,
+.analysis-module-slot {
+    background-color: var(--bg-white);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-sm);
+    min-height: 300px;
+}
+
+.app-footer {
+    background-color: var(--bg-section);
+    border-top: 1px solid var(--border-light);
+    padding: var(--spacing-md) 0;
+}
+
+/* Loading and Error Overlays */
+.app-loading,
+.app-error {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(255, 255, 255, 0.95);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: var(--z-modal);
+}
+
+.loading-content,
+.error-content {
+    text-align: center;
+    padding: var(--spacing-xl);
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid var(--border-light);
+    border-top: 4px solid var(--schlatter-blue);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    margin: 0 auto var(--spacing-md);
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.error-content h3 {
+    color: var(--status-error);
+    margin-bottom: var(--spacing-md);
+}
+</style>

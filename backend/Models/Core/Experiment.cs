@@ -18,4 +18,5 @@ public class Experiment
     public bool HasWeldJournal { get; set; }
     public bool HasCrownMeasurements { get; set; }
     public bool HasAmbientTemperature { get; set; }
+    public bool HasPhotos { get; set; }
 }

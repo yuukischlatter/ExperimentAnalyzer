@@ -28,12 +28,8 @@ public class JournalParser : BaseStartupService
                     continue;
                 }
                 
+                // Find journal file (guaranteed to exist since DirectoryScanner only saves experiments with journals)
                 var journalPath = FindJournalFile(experiment.FolderPath);
-                if (journalPath == null)
-                {
-                    result.Errors.Add($"Journal file not found for {experiment.Id}");
-                    continue;
-                }
                 
                 var metadata = await ParseJournalFileAsync(experiment.Id, journalPath);
                 await _repository.UpsertMetadataAsync(metadata);
@@ -51,13 +47,13 @@ public class JournalParser : BaseStartupService
         return result;
     }
     
-    private static string? FindJournalFile(string experimentFolder)
+    private static string FindJournalFile(string experimentFolder)
     {
         var journalFiles = Directory.GetFiles(experimentFolder, "*", SearchOption.AllDirectories)
             .Where(f => f.EndsWith("Schweissjournal.txt", StringComparison.OrdinalIgnoreCase))
             .ToList();
             
-        return journalFiles.FirstOrDefault();
+        return journalFiles.First(); // Use First() instead of FirstOrDefault() since we know it exists
     }
     
     private static async Task<ExperimentMetadata> ParseJournalFileAsync(string experimentId, string journalPath)

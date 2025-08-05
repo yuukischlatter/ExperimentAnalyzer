@@ -1,0 +1,155 @@
+/**
+ * Schlatter Design System - CSS Variables
+ * Based on corporate design language from PDF generator
+ * Clean, professional, minimal styling approach
+ */
+
+:root {
+  /* === SCHLATTER BRAND COLORS === */
+  --schlatter-blue: #003278;           /* Primary brand blue - headers, accent */
+  --schlatter-blue-rgb: 0, 50, 120;   /* RGB values for transparency */
+  --schlatter-red: #DC3232;           /* Accent red - warnings, highlights */
+  --schlatter-red-rgb: 220, 50, 50;   /* RGB values for transparency */
+
+  /* === TEXT COLORS === */
+  --text-primary: #333333;            /* Main text color */
+  --text-secondary: #666666;          /* Secondary text, labels */
+  --text-muted: #999999;              /* Disabled text, placeholders */
+  --text-white: #FFFFFF;              /* White text on dark backgrounds */
+
+  /* === BACKGROUND COLORS === */
+  --bg-white: #FFFFFF;                /* Pure white backgrounds */
+  --bg-light: #F8F9FA;               /* Light gray backgrounds */
+  --bg-section: #FCFCFC;             /* Section backgrounds */
+  --bg-selected: #E3F2FD;            /* Selected row highlight */
+  --bg-hover: #F5F5F5;               /* Hover state background */
+
+  /* === BORDER COLORS === */
+  --border-color: #C8C8C8;           /* Standard borders */
+  --border-light: #E0E0E0;           /* Light borders */
+  --border-selected: #1976D2;        /* Selected state borders */
+  --border-focus: var(--schlatter-blue); /* Focus state borders */
+
+  /* === TYPOGRAPHY === */
+  --font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  --font-family-mono: 'Consolas', 'Monaco', 'Courier New', monospace;
+  
+  /* Font Sizes */
+  --font-xs: 11px;                   /* Small labels, captions */
+  --font-sm: 12px;                   /* Table data, secondary text */
+  --font-md: 14px;                   /* Body text, inputs */
+  --font-lg: 16px;                   /* Headers, important text */
+  --font-xl: 18px;                   /* Section titles */
+  --font-xxl: 20px;                  /* Page titles */
+  --font-xxxl: 32px;                  /* Main titles */
+
+  /* Font Weights */
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+
+  /* Line Heights */
+  --line-height-tight: 1.25;
+  --line-height-normal: 1.5;
+  --line-height-relaxed: 1.75;
+
+  /* === SPACING === */
+  --spacing-xs: 4px;                 /* Minimal spacing */
+  --spacing-sm: 8px;                 /* Small gaps */
+  --spacing-md: 16px;                /* Standard spacing */
+  --spacing-lg: 24px;                /* Large gaps */
+  --spacing-xl: 32px;                /* Section spacing */
+  --spacing-xxl: 48px;               /* Major section spacing */
+
+  /* === LAYOUT === */
+  --border-radius: 4px;              /* Standard border radius */
+  --border-radius-sm: 2px;           /* Small border radius */
+  --border-radius-lg: 6px;           /* Large border radius */
+
+  /* Container Widths */
+  --container-sm: 640px;
+  --container-md: 768px;
+  --container-lg: 1024px;
+  --container-xl: 1280px;
+
+  /* === COMPONENT SPECIFIC === */
+  
+  /* Tables */
+  --table-border: var(--border-light);
+  --table-header-bg: var(--bg-light);
+  --table-header-text: var(--schlatter-blue);
+  --table-row-even: var(--bg-white);
+  --table-row-odd: #FCFCFC;
+  --table-row-hover: var(--bg-hover);
+  --table-row-selected: var(--bg-selected);
+
+  /* Forms */
+  --input-border: var(--border-color);
+  --input-border-focus: var(--schlatter-blue);
+  --input-bg: var(--bg-white);
+  --input-placeholder: var(--text-muted);
+
+  /* Buttons */
+  --btn-primary-bg: var(--schlatter-blue);
+  --btn-primary-hover: #002A66;
+  --btn-primary-text: var(--text-white);
+  --btn-secondary-bg: var(--bg-light);
+  --btn-secondary-hover: #E8E9EA;
+  --btn-secondary-text: var(--text-primary);
+
+  /* File Type Indicators */
+  --file-available: #4CAF50;         /* Green for available files */
+  --file-missing: var(--border-color); /* Gray for missing files */
+  --file-bin: #4CAF50;               /* Binary files */
+  --file-csv: #FF9800;               /* CSV data files */
+  --file-image: #E91E63;             /* Photo files */
+  --file-video: #9C27B0;             /* Video files */
+  --file-data: #2196F3;              /* Data files */
+
+  /* Status Colors */
+  --status-success: #4CAF50;
+  --status-warning: #FF9800;
+  --status-error: var(--schlatter-red);
+  --status-info: #2196F3;
+
+  /* === SHADOWS === */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.15);
+
+  /* === TRANSITIONS === */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.2s ease;
+  --transition-slow: 0.3s ease;
+
+  /* === Z-INDEX LAYERS === */
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-fixed: 1030;
+  --z-modal: 1040;
+  --z-popover: 1050;
+  --z-tooltip: 1060;
+}
+
+/* === DARK MODE SUPPORT (Future) === */
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Keep Schlatter brand colors consistent */
+    /* Override background and text colors only if needed */
+    /* Currently maintaining light theme for professional appearance */
+  }
+}
+
+/* === PRINT STYLES === */
+@media print {
+  :root {
+    --bg-light: transparent;
+    --bg-section: transparent;
+    --bg-hover: transparent;
+    --bg-selected: transparent;
+    --shadow-sm: none;
+    --shadow-md: none;
+    --shadow-lg: none;
+  }
+}
