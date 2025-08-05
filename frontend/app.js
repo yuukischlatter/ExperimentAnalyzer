@@ -244,7 +244,10 @@ class ExperimentAnalyzer {
         
         // Store template for module access
         const moduleName = url.split('/').pop().replace('.html', '');
-        window[`${this.getModuleClassName(moduleName)}Template`] = html;
+        const templateVarName = `${this.getModuleClassName(moduleName)}Template`;
+        window[templateVarName] = html;
+        
+        console.log(`Template stored as: ${templateVarName}`);
     }
     
     /**
@@ -310,14 +313,27 @@ class ExperimentAnalyzer {
             'HasTcp5File': 'tcp5-oscilloscope',
             'HasWeldJournal': 'weld-journal',
             'HasCrownMeasurements': 'crown-measurements',
-            'HasAmbientTemperature': 'ambient-temperature'
+            'HasAmbientTemperature': 'ambient-temperature',
+            // Also check camelCase versions (JavaScript convention)
+            'hasBinFile': 'bin-oscilloscope',
+            'hasAccelerationCsv': 'acceleration',
+            'hasPositionCsv': 'position',
+            'hasTensileCsv': 'tensile-strength',
+            'hasPhotos': 'photo-gallery',
+            'hasThermalRavi': 'thermal-ir',
+            'hasTcp5File': 'tcp5-oscilloscope',
+            'hasWeldJournal': 'weld-journal',
+            'hasCrownMeasurements': 'crown-measurements',
+            'hasAmbientTemperature': 'ambient-temperature'
         };
         
         const loadPromises = [];
+        const loadedModules = new Set(); // Prevent duplicate loading
         
         for (const [fileFlag, moduleName] of Object.entries(moduleMap)) {
-            if (experiment[fileFlag]) {
+            if (experiment[fileFlag] && !loadedModules.has(moduleName)) {
                 console.log(`Loading ${moduleName} module (${fileFlag} = true)`);
+                loadedModules.add(moduleName);
                 
                 const containerId = `${moduleName}-container`;
                 const promise = this.loadModule(moduleName, containerId, {

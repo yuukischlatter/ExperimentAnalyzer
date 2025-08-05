@@ -3,7 +3,9 @@ using Microsoft.Extensions.Options;
 
 namespace ExperimentAnalyzer.Services.Data;
 
-Core service for processing binary oscilloscope files from PicoScope experiments
+/// <summary>
+/// Core service for processing binary oscilloscope files from PicoScope experiments
+/// </summary>
 /// Handles 2-3GB binary files with interleaved 8-channel data
 
 public class BinFileProcessor : IBinFileProcessor

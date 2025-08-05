@@ -1,0 +1,135 @@
+<!-- Binary Oscilloscope Module Template -->
+<div class="bin-oscilloscope-container">
+    
+    <!-- Module Header -->
+    <div class="bin-oscilloscope-header card-header">
+        <div class="flex items-center justify-between">
+            <div class="bin-oscilloscope-title">
+                <h3 class="card-title">Binary Oscilloscope</h3>
+                <p class="text-sm text-secondary">8-Channel PicoScope Data Visualization</p>
+            </div>
+            
+            <div class="bin-oscilloscope-actions">
+                <button data-bind="exportBtn" class="btn btn-secondary btn-sm" title="Export chart as PNG">
+                    <span>📊</span> Export PNG
+                </button>
+                <button data-bind="resetZoomBtn" class="btn btn-secondary btn-sm" title="Reset zoom to full view">
+                    <span>🔍</span> Reset Zoom
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Channel Controls -->
+    <div class="bin-oscilloscope-controls card-body">
+        <div class="channel-groups">
+            
+            <!-- Voltage Channels Group -->
+            <div class="channel-group voltage-group">
+                <div class="channel-group-title">Voltage Channels</div>
+                <div class="channel-toggles">
+                    <div class="channel-toggle">
+                        <input data-bind="channel0Checkbox" type="checkbox" id="channel-0" class="channel-checkbox" checked>
+                        <label for="channel-0" class="channel-label">UL1L2</label>
+                        <span class="channel-unit">V</span>
+                    </div>
+                    <div class="channel-toggle">
+                        <input data-bind="channel1Checkbox" type="checkbox" id="channel-1" class="channel-checkbox" checked>
+                        <label for="channel-1" class="channel-label">UL2L3</label>
+                        <span class="channel-unit">V</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Current Channels Group -->
+            <div class="channel-group current-group">
+                <div class="channel-group-title">Current Channels</div>
+                <div class="channel-toggles">
+                    <div class="channel-toggle">
+                        <input data-bind="channel2Checkbox" type="checkbox" id="channel-2" class="channel-checkbox" checked>
+                        <label for="channel-2" class="channel-label">IL1GR1</label>
+                        <span class="channel-unit">A</span>
+                    </div>
+                    <div class="channel-toggle">
+                        <input data-bind="channel3Checkbox" type="checkbox" id="channel-3" class="channel-checkbox" checked>
+                        <label for="channel-3" class="channel-label">IL3GR1</label>
+                        <span class="channel-unit">A</span>
+                    </div>
+                    <div class="channel-toggle">
+                        <input data-bind="channel4Checkbox" type="checkbox" id="channel-4" class="channel-checkbox" checked>
+                        <label for="channel-4" class="channel-label">IL1GR2</label>
+                        <span class="channel-unit">A</span>
+                    </div>
+                    <div class="channel-toggle">
+                        <input data-bind="channel5Checkbox" type="checkbox" id="channel-5" class="channel-checkbox" checked>
+                        <label for="channel-5" class="channel-label">IL3GR2</label>
+                        <span class="channel-unit">A</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Pressure Channels Group -->
+            <div class="channel-group pressure-group">
+                <div class="channel-group-title">Pressure Channels</div>
+                <div class="channel-toggles">
+                    <div class="channel-toggle">
+                        <input data-bind="channel6Checkbox" type="checkbox" id="channel-6" class="channel-checkbox" checked>
+                        <label for="channel-6" class="channel-label">P_Vor</label>
+                        <span class="channel-unit">Bar</span>
+                    </div>
+                    <div class="channel-toggle">
+                        <input data-bind="channel7Checkbox" type="checkbox" id="channel-7" class="channel-checkbox" checked>
+                        <label for="channel-7" class="channel-label">P_Rueck</label>
+                        <span class="channel-unit">Bar</span>
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+        
+        <!-- Status Display -->
+        <div class="status-display">
+            <div class="status-item">
+                <span class="status-indicator" data-bind="statusIndicator"></span>
+                <span data-bind="resolutionStatus">Ready to load data</span>
+            </div>
+            <div class="status-item">
+                <span data-bind="dataPoints">Points: -</span>
+            </div>
+            <div class="status-item">
+                <span data-bind="timeRange">Range: -</span>
+            </div>
+            <div class="status-item">
+                <span data-bind="experimentInfo">No experiment selected</span>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Chart Content -->
+    <div class="bin-oscilloscope-content">
+        
+        <!-- Loading State -->
+        <div data-bind="loadingSpinner" class="loading-state hidden">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <p data-bind="loadingMessage">Loading oscilloscope data...</p>
+            </div>
+        </div>
+        
+        <!-- Error State -->
+        <div data-bind="errorMessage" class="error-state hidden">
+            <div class="error-content">
+                <h4>Unable to Load Oscilloscope Data</h4>
+                <p data-bind="errorText">An error occurred while loading binary data.</p>
+                <button data-bind="retryBtn" class="btn btn-primary btn-sm">Retry</button>
+            </div>
+        </div>
+        
+        <!-- Plotly Chart Container -->
+        <div data-bind="chartContainer" class="chart-container">
+            <div id="plotly-chart-container" class="plotly-chart"></div>
+        </div>
+        
+    </div>
+    
+</div>
