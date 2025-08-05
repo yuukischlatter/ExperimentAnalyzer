@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS experiments (
     has_acceleration_csv BOOLEAN DEFAULT FALSE,
     has_position_csv BOOLEAN DEFAULT FALSE,
     has_tensile_csv BOOLEAN DEFAULT FALSE,
+    has_photos BOOLEAN DEFAULT FALSE,       -- ← ADDED THIS LINE
     has_thermal_ravi BOOLEAN DEFAULT FALSE,
     has_tcp5_file BOOLEAN DEFAULT FALSE,
     has_weld_journal BOOLEAN DEFAULT FALSE,

@@ -125,12 +125,12 @@ public class DirectoryScanner : BaseStartupService
             HasAccelerationCsv = HasFileType(files, experimentId + "_beschleuinigung.csv"),
             HasPositionCsv = HasFilePattern(files, "snapshot_optoNCDT-*.csv"),
             HasTensileCsv = HasTensileFile(files, experimentId),
+            HasPhotos = HasImageFile(files),
             HasThermalRavi = HasFilePattern(files, "Record_*.ravi"),
             HasTcp5File = HasFileType(files, experimentId + "_original(manuell).tpc5"),
             HasWeldJournal = HasFileType(files, "Schweissjournal.txt"),
             HasCrownMeasurements = HasFileType(files, "Geradheit+Versatz.xlsx"),
-            HasAmbientTemperature = HasFilePattern(files, "temperature*.csv"),
-            HasPhotos = HasImageFile(files)
+            HasAmbientTemperature = HasFilePattern(files, "temperature*.csv")
         };
     }
     

@@ -41,6 +41,7 @@ public class ExperimentRepository : IExperimentRepository
                 has_acceleration_csv as HasAccelerationCsv,
                 has_position_csv as HasPositionCsv,
                 has_tensile_csv as HasTensileCsv,
+                has_photos as HasPhotos,
                 has_thermal_ravi as HasThermalRavi,
                 has_tcp5_file as HasTcp5File,
                 has_weld_journal as HasWeldJournal,
@@ -64,6 +65,7 @@ public class ExperimentRepository : IExperimentRepository
                 e.has_acceleration_csv as HasAccelerationCsv,
                 e.has_position_csv as HasPositionCsv,
                 e.has_tensile_csv as HasTensileCsv,
+                e.has_photos as HasPhotos,
                 e.has_thermal_ravi as HasThermalRavi,
                 e.has_tcp5_file as HasTcp5File,
                 e.has_weld_journal as HasWeldJournal,
@@ -110,13 +112,13 @@ public class ExperimentRepository : IExperimentRepository
             INSERT OR REPLACE INTO experiments (
                 id, folder_path, experiment_date, created_at, updated_at,
                 has_bin_file, has_acceleration_csv, has_position_csv, has_tensile_csv,
-                has_thermal_ravi, has_tcp5_file, has_weld_journal, has_crown_measurements,
-                has_ambient_temperature
+                has_photos, has_thermal_ravi, has_tcp5_file, has_weld_journal, 
+                has_crown_measurements, has_ambient_temperature
             ) VALUES (
                 @Id, @FolderPath, @ExperimentDate, @CreatedAt, @UpdatedAt,
                 @HasBinFile, @HasAccelerationCsv, @HasPositionCsv, @HasTensileCsv,
-                @HasThermalRavi, @HasTcp5File, @HasWeldJournal, @HasCrownMeasurements,
-                @HasAmbientTemperature
+                @HasPhotos, @HasThermalRavi, @HasTcp5File, @HasWeldJournal, 
+                @HasCrownMeasurements, @HasAmbientTemperature
             )";
 
         await _connection.ExecuteAsync(sql, new
@@ -130,6 +132,7 @@ public class ExperimentRepository : IExperimentRepository
             HasAccelerationCsv = experiment.HasAccelerationCsv ? 1 : 0,
             HasPositionCsv = experiment.HasPositionCsv ? 1 : 0,
             HasTensileCsv = experiment.HasTensileCsv ? 1 : 0,
+            HasPhotos = experiment.HasPhotos ? 1 : 0,
             HasThermalRavi = experiment.HasThermalRavi ? 1 : 0,
             HasTcp5File = experiment.HasTcp5File ? 1 : 0,
             HasWeldJournal = experiment.HasWeldJournal ? 1 : 0,
@@ -175,6 +178,7 @@ public class ExperimentRepository : IExperimentRepository
                 has_acceleration_csv as HasAccelerationCsv,
                 has_position_csv as HasPositionCsv,
                 has_tensile_csv as HasTensileCsv,
+                has_photos as HasPhotos,
                 has_thermal_ravi as HasThermalRavi,
                 has_tcp5_file as HasTcp5File,
                 has_weld_journal as HasWeldJournal,
@@ -199,6 +203,7 @@ public class ExperimentRepository : IExperimentRepository
                 e.has_acceleration_csv as HasAccelerationCsv,
                 e.has_position_csv as HasPositionCsv,
                 e.has_tensile_csv as HasTensileCsv,
+                e.has_photos as HasPhotos,
                 e.has_thermal_ravi as HasThermalRavi,
                 e.has_tcp5_file as HasTcp5File,
                 e.has_weld_journal as HasWeldJournal,
@@ -255,6 +260,7 @@ public class ExperimentRepository : IExperimentRepository
                 e.has_acceleration_csv as HasAccelerationCsv,
                 e.has_position_csv as HasPositionCsv,
                 e.has_tensile_csv as HasTensileCsv,
+                e.has_photos as HasPhotos,
                 e.has_thermal_ravi as HasThermalRavi,
                 e.has_tcp5_file as HasTcp5File,
                 e.has_weld_journal as HasWeldJournal,
