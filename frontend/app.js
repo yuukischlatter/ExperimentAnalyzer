@@ -175,14 +175,12 @@ class ExperimentAnalyzer {
             return `/modules/core/${moduleName}`;
         }
         
-        // Data visualization modules
-        if (['bin-oscilloscope', 'acceleration', 'position', 'tensile-strength', 
-             'photo-gallery', 'thermal-ir', 'tcp5-oscilloscope', 'weld-journal',
-             'crown-measurements', 'ambient-temperature'].includes(moduleName)) {
+        // Data visualization modules - ONLY INCLUDE MODULES THAT EXIST
+        if (['bin-oscilloscope'].includes(moduleName)) {
             return `/modules/data/${moduleName}`;
         }
         
-        // Analysis modules
+        // Analysis modules (none implemented yet)
         if (['multi-axis-plotter', 'fft-analyzer', 'comparison-viewer'].includes(moduleName)) {
             return `/modules/analysis/${moduleName}`;
         }
@@ -301,30 +299,34 @@ class ExperimentAnalyzer {
     
     /**
      * Load data modules based on experiment file availability
+     * ONLY LOAD MODULES THAT ACTUALLY EXIST
      */
     async loadDataModulesForExperiment(experiment) {
+        // ONLY INCLUDE MODULES THAT EXIST IN YOUR PROJECT
         const moduleMap = {
+            // Binary oscilloscope module (exists)
             'HasBinFile': 'bin-oscilloscope',
-            'HasAccelerationCsv': 'acceleration',
-            'HasPositionCsv': 'position',
-            'HasTensileCsv': 'tensile-strength',
-            'HasPhotos': 'photo-gallery',
-            'HasThermalRavi': 'thermal-ir',
-            'HasTcp5File': 'tcp5-oscilloscope',
-            'HasWeldJournal': 'weld-journal',
-            'HasCrownMeasurements': 'crown-measurements',
-            'HasAmbientTemperature': 'ambient-temperature',
-            // Also check camelCase versions (JavaScript convention)
-            'hasBinFile': 'bin-oscilloscope',
-            'hasAccelerationCsv': 'acceleration',
-            'hasPositionCsv': 'position',
-            'hasTensileCsv': 'tensile-strength',
-            'hasPhotos': 'photo-gallery',
-            'hasThermalRavi': 'thermal-ir',
-            'hasTcp5File': 'tcp5-oscilloscope',
-            'hasWeldJournal': 'weld-journal',
-            'hasCrownMeasurements': 'crown-measurements',
-            'hasAmbientTemperature': 'ambient-temperature'
+            'hasBinFile': 'bin-oscilloscope'
+            
+            // COMMENTED OUT MODULES THAT DON'T EXIST YET
+            // 'HasAccelerationCsv': 'acceleration',
+            // 'HasPositionCsv': 'position',
+            // 'HasTensileCsv': 'tensile-strength',
+            // 'HasPhotos': 'photo-gallery',
+            // 'HasThermalRavi': 'thermal-ir',
+            // 'HasTcp5File': 'tcp5-oscilloscope',
+            // 'HasWeldJournal': 'weld-journal',
+            // 'HasCrownMeasurements': 'crown-measurements',
+            // 'HasAmbientTemperature': 'ambient-temperature',
+            // 'hasAccelerationCsv': 'acceleration',
+            // 'hasPositionCsv': 'position',
+            // 'hasTensileCsv': 'tensile-strength',
+            // 'hasPhotos': 'photo-gallery',
+            // 'hasThermalRavi': 'thermal-ir',
+            // 'hasTcp5File': 'tcp5-oscilloscope',
+            // 'hasWeldJournal': 'weld-journal',
+            // 'hasCrownMeasurements': 'crown-measurements',
+            // 'hasAmbientTemperature': 'ambient-temperature'
         };
         
         const loadPromises = [];
@@ -358,6 +360,34 @@ class ExperimentAnalyzer {
                 
                 loadPromises.push(promise);
             }
+        }
+        
+        // Log which modules we're skipping
+        const availableFiles = Object.keys(moduleMap).filter(flag => experiment[flag]);
+        const skippedFiles = [];
+        
+        // Check for files that are available but we don't have modules for
+        const allPossibleFlags = [
+            'HasAccelerationCsv', 'hasAccelerationCsv',
+            'HasPositionCsv', 'hasPositionCsv', 
+            'HasTensileCsv', 'hasTensileCsv',
+            'HasPhotos', 'hasPhotos',
+            'HasThermalRavi', 'hasThermalRavi',
+            'HasTcp5File', 'hasTcp5File',
+            'HasWeldJournal', 'hasWeldJournal',
+            'HasCrownMeasurements', 'hasCrownMeasurements',
+            'HasAmbientTemperature', 'hasAmbientTemperature'
+        ];
+        
+        allPossibleFlags.forEach(flag => {
+            if (experiment[flag] && !moduleMap[flag]) {
+                const moduleType = flag.replace(/^(has|Has)/, '').replace(/Csv$/, '');
+                skippedFiles.push(moduleType);
+            }
+        });
+        
+        if (skippedFiles.length > 0) {
+            console.log(`Skipping modules (not implemented yet): ${skippedFiles.join(', ')}`);
         }
         
         // Wait for all modules to load

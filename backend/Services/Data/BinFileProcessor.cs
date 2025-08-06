@@ -6,23 +6,21 @@ namespace ExperimentAnalyzer.Services.Data;
 
 /// <summary>
 /// Core service for processing binary oscilloscope files from PicoScope experiments
-/// Uses sequential reading approach with welding calculations
-/// Copies network files to temp folder for optimal performance
-/// Automatically decimates large datasets using smart MinMax-LTTB algorithm for browser compatibility
+/// Uses sequential reading approach with welding calculations exactly matching JavaScript
+/// Automatically decimates large datasets using simple approach for browser compatibility
 /// </summary>
 public class BinFileProcessor : IBinFileProcessor
 {
     private readonly ILogger<BinFileProcessor> _logger;
     private readonly BinOscilloscopeSettings _settings;
     
-    /// PicoConnect probe input ranges in millivolts
-    /// Maps to enum: Range_10MV=0, Range_20MV=1, ..., Range_200V=13
-    private static readonly uint[] InputRanges = 
+    /// PicoConnect probe voltage ranges in millivolts (matches JavaScript exactly)
+    private static readonly uint[] VOLTAGE_RANGES = 
     { 
         10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000 
     };
 
-    /// Welding calculation constants
+    /// Welding calculation constants (must match JavaScript exactly)
     private const double TrafoCurrentMultiplier = 35.0;
     private const double PressureToForceMultiplier1 = 6.2832;
     private const double PressureToForceMultiplier2 = 5.0108;
@@ -30,11 +28,6 @@ public class BinFileProcessor : IBinFileProcessor
     /// Browser-safe data point limits
     private const int DefaultMaxPoints = 2000;
     private const int MaxAllowedPoints = 10000;
-    
-    /// Smart decimation constants
-    private const double DefaultSpikeThreshold = 0.1; // 10% variation threshold
-    private const int DefaultMinBucketSize = 3;
-    private const int DefaultMaxPointsPerBucket = 3;
     
     public BinFileProcessor(
         ILogger<BinFileProcessor> logger,
@@ -67,9 +60,8 @@ public class BinFileProcessor : IBinFileProcessor
         if (File.Exists(tempPath))
         {
             var tempFileAge = DateTime.Now - File.GetLastWriteTime(tempPath);
-            var originalFileAge = DateTime.Now - File.GetLastWriteTime(originalPath);
             
-            // Use existing temp file if it's newer than original or less than 1 hour old
+            // Use existing temp file if it's less than 1 hour old or newer than original
             if (tempFileAge < TimeSpan.FromHours(1) || File.GetLastWriteTime(tempPath) >= File.GetLastWriteTime(originalPath))
             {
                 _logger.LogDebug("Using existing temp file: {TempPath}", tempPath);
@@ -238,9 +230,8 @@ public class BinFileProcessor : IBinFileProcessor
     }
 
     /// <summary>
-    /// Core sequential data loading method with smart MinMax-LTTB decimation
-    /// Includes real-time welding calculations during read
-    /// Now uses local temp files for optimal performance and applies smart decimation
+    /// Core sequential data loading method exactly matching JavaScript approach
+    /// Includes real-time welding calculations during read with simple decimation
     /// </summary>
     private async Task<BinOscilloscopeData> LoadBinaryDataSequentialAsync(
         string localBinPath, 
@@ -263,7 +254,7 @@ public class BinFileProcessor : IBinFileProcessor
             Channels = new Dictionary<int, ChannelData>()
         };
         
-        // Initialize data storage for raw channels (0-7)
+        // Initialize data storage for raw channels (0-7) - exactly like JavaScript
         var channelLists = new Dictionary<int, List<double>>();
         var timeList = new List<double>();
         
@@ -272,7 +263,7 @@ public class BinFileProcessor : IBinFileProcessor
             channelLists[ch] = new List<double>();
         }
         
-        // Initialize data storage for calculated channels (8-11)
+        // Initialize data storage for calculated channels (8-11) - exactly like JavaScript
         var calculatedChannelLists = new Dictionary<int, List<double>>
         {
             [8] = new List<double>(), // I_DC_GR1*
@@ -281,23 +272,23 @@ public class BinFileProcessor : IBinFileProcessor
             [11] = new List<double>()  // F_Schlitten*
         };
         
-        // Sequential reading with localidx approach from standalone
+        // Sequential reading with localidx approach - exactly matching JavaScript
         int[] localIdx = new int[8];
         
-        // Read interleaved data exactly as in Form1.cs
+        // Read interleaved data exactly like JavaScript
         for (uint j = 0; j < metadata.TotalSamples; j++)
         {
-            // Storage for current sample values (for calculations)
+            // Storage for current sample values (for calculations) - reset per sample
             double[] currentValues = new double[8];
             
             for (int channel = 0; channel < 8; channel++)
             {
                 short rawValue = reader.ReadInt16();
                 
-                // Apply downsampling check - matches Form1.cs logic exactly
+                // Apply downsampling check - matches JavaScript logic exactly
                 if (j % metadata.Downsampling[channel] == 0)
                 {
-                    // Convert to engineering units
+                    // Convert to engineering units using exact JavaScript formula
                     double engineeringValue = ConvertToEngineeringUnits(
                         rawValue, 
                         metadata.ChannelRanges[channel], 
@@ -307,15 +298,15 @@ public class BinFileProcessor : IBinFileProcessor
                     channelLists[channel].Add(engineeringValue);
                     currentValues[channel] = engineeringValue;
                     
-                    // Add time point (use channel 0 as reference - fastest sampling)
+                    // Add time point (use channel 0 as reference - fastest sampling) - exactly like JavaScript
                     if (channel == 0)
                     {
-                        double timeMs = j * metadata.SampleIntervalMicroseconds / 1000.0;
-                        timeList.Add(timeMs);
+                        double timeSeconds = j * metadata.SampleIntervalMicroseconds / 1_000_000.0; // Convert to seconds
+                        timeList.Add(timeSeconds);
                     }
                     
-                    // Welding calculations - matches Form1.cs logic exactly
-                    PerformWeldingCalculations(channel, currentValues, calculatedChannelLists, localIdx);
+                    // Welding calculations - matches JavaScript logic exactly, called immediately
+                    PerformWeldingCalculations(channel, currentValues, calculatedChannelLists);
                     
                     localIdx[channel]++;
                 }
@@ -329,43 +320,34 @@ public class BinFileProcessor : IBinFileProcessor
             }
         }
         
-        // Apply smart decimation to time array and all channels
+        // Apply simple decimation exactly like JavaScript
         var originalPoints = timeList.Count;
         var decimationRatio = CalculateDecimationRatio(originalPoints, maxPoints);
         
         if (decimationRatio > 1)
         {
-            _logger.LogInformation("Applying smart MinMax-LTTB decimation: {OriginalPoints} -> ~{TargetPoints} points", 
+            _logger.LogInformation("Applying simple decimation: {OriginalPoints} -> ~{TargetPoints} points", 
                 originalPoints, maxPoints);
             
-            // Apply smart decimation to time array
+            // Apply simple decimation to time array and all channels using JavaScript approach
             var timeArray = timeList.ToArray();
-            var decimationResult = ApplySmartDecimation(timeArray, timeArray, maxPoints);
-            data.TimeArray = decimationResult.DecimatedTime;
-            data.TotalDataPoints = data.TimeArray.Length;
+            var decimatedTime = ApplySimpleDecimation(timeArray, maxPoints);
+            data.TimeArray = decimatedTime;
+            data.TotalDataPoints = decimatedTime.Length;
             
-            var spikesPreserved = 0;
-            var bucketsWithVariation = 0;
-            
-            // Apply smart decimation to all channel data using the same time indices
+            // Apply same decimation to all channel data
             for (int ch = 0; ch < 8; ch++)
             {
-                var channelResult = ApplySmartDecimation(channelLists[ch].ToArray(), timeArray, maxPoints);
-                channelLists[ch] = channelResult.DecimatedValues.ToList();
-                spikesPreserved += channelResult.SpikesPreserved;
-                bucketsWithVariation += channelResult.BucketsWithVariation;
+                var decimatedValues = ApplySimpleDecimation(channelLists[ch].ToArray(), maxPoints);
+                channelLists[ch] = decimatedValues.ToList();
             }
             
-            // Apply smart decimation to calculated channels
+            // Apply same decimation to calculated channels
             for (int ch = 8; ch <= 11; ch++)
             {
-                var channelResult = ApplySmartDecimation(calculatedChannelLists[ch].ToArray(), timeArray, maxPoints);
-                calculatedChannelLists[ch] = channelResult.DecimatedValues.ToList();
-                spikesPreserved += channelResult.SpikesPreserved;
+                var decimatedValues = ApplySimpleDecimation(calculatedChannelLists[ch].ToArray(), maxPoints);
+                calculatedChannelLists[ch] = decimatedValues.ToList();
             }
-            
-            _logger.LogInformation("Smart decimation completed: {FinalPoints} points, {SpikesPreserved} spikes preserved, {BucketsWithVariation}% buckets had significant variation", 
-                data.TotalDataPoints, spikesPreserved, (bucketsWithVariation * 100) / Math.Max(1, maxPoints));
         }
         else
         {
@@ -390,7 +372,7 @@ public class BinFileProcessor : IBinFileProcessor
             };
         }
         
-        // Set calculated channel data (channels 8-11)
+        // Set calculated channel data (channels 8-11) - exactly like JavaScript
         data.Channels[8] = new ChannelData
         {
             Values = calculatedChannelLists[8].ToArray(),
@@ -439,14 +421,14 @@ public class BinFileProcessor : IBinFileProcessor
             ProbeRange = metadata.ChannelRanges[6]
         };
         
-        _logger.LogInformation("Sequential loading completed from local file. {Points} data points, {Channels} total channels (smart decimation: {WasDecimated})", 
+        _logger.LogInformation("Sequential loading completed from local file. {Points} data points, {Channels} total channels (decimated: {WasDecimated})", 
             data.TotalDataPoints, data.Channels.Count, decimationRatio > 1);
         
         return data;
     }
     
     /// <summary>
-    /// Calculate decimation ratio needed to achieve target point count
+    /// Calculate decimation ratio needed to achieve target point count - exactly like JavaScript
     /// </summary>
     private int CalculateDecimationRatio(int totalPoints, int maxPoints)
     {
@@ -459,156 +441,58 @@ public class BinFileProcessor : IBinFileProcessor
     }
     
     /// <summary>
-    /// Smart decimation result containing both decimated data and statistics
+    /// Apply simple decimation exactly matching JavaScript approach
     /// </summary>
-    private class SmartDecimationResult
+    private double[] ApplySimpleDecimation(double[] originalValues, int maxPoints)
     {
-        public double[] DecimatedValues { get; set; } = Array.Empty<double>();
-        public double[] DecimatedTime { get; set; } = Array.Empty<double>();
-        public int SpikesPreserved { get; set; }
-        public int BucketsWithVariation { get; set; }
-    }
-    
-    /// <summary>
-    /// Apply smart MinMax-LTTB decimation with spike preservation
-    /// Based on the algorithm from your working JS system
-    /// </summary>
-    private SmartDecimationResult ApplySmartDecimation(double[] originalValues, double[] timeArray, int targetPoints)
-    {
-        if (originalValues.Length <= targetPoints || originalValues.Length == 0)
+        if (originalValues.Length <= maxPoints || originalValues.Length == 0)
         {
-            return new SmartDecimationResult 
-            { 
-                DecimatedValues = originalValues, 
-                DecimatedTime = timeArray,
-                SpikesPreserved = 0,
-                BucketsWithVariation = 0
-            };
+            return originalValues;
         }
         
-        var result = new SmartDecimationResult();
         var decimatedValues = new List<double>();
-        var decimatedTime = new List<double>();
-        var spikesPreserved = 0;
-        var bucketsWithVariation = 0;
         
-        // Create buckets - divide data into targetPoints buckets
-        var bucketSize = Math.Max(DefaultMinBucketSize, originalValues.Length / targetPoints);
-        var actualBuckets = (int)Math.Ceiling((double)originalValues.Length / bucketSize);
+        // Simple step-based approach exactly like JavaScript
+        int step = (int)Math.Ceiling((double)originalValues.Length / maxPoints);
         
-        for (int bucketIndex = 0; bucketIndex < actualBuckets; bucketIndex++)
+        for (int i = 0; i < originalValues.Length; i += step)
         {
-            var startIdx = bucketIndex * bucketSize;
-            var endIdx = Math.Min(startIdx + bucketSize, originalValues.Length);
-            var bucketLength = endIdx - startIdx;
+            // Take min, max, and average in each bucket for better representation - exactly like JavaScript
+            double min = originalValues[i];
+            double max = originalValues[i];
+            double sum = 0;
+            int count = 0;
             
-            if (bucketLength == 0) continue;
-            
-            // Extract bucket data
-            var bucketValues = new ArraySegment<double>(originalValues, startIdx, bucketLength);
-            var bucketTimes = new ArraySegment<double>(timeArray, startIdx, bucketLength);
-            
-            // Process bucket with MinMax-LTTB algorithm
-            var bucketResult = ProcessBucket(bucketValues, bucketTimes);
-            
-            // Add results to decimated arrays
-            decimatedValues.AddRange(bucketResult.Values);
-            decimatedTime.AddRange(bucketResult.Times);
-            
-            // Update statistics
-            spikesPreserved += bucketResult.SpikesPreserved;
-            if (bucketResult.HasSignificantVariation)
+            for (int j = 0; j < step && i + j < originalValues.Length; j++)
             {
-                bucketsWithVariation++;
+                double val = originalValues[i + j];
+                min = Math.Min(min, val);
+                max = Math.Max(max, val);
+                sum += val;
+                count++;
+            }
+            
+            if (count > 0)
+            {
+                double avg = sum / count;
+                
+                // JavaScript logic: if significant variation, include min and max
+                if (Math.Abs(max - min) > Math.Abs(avg) * 0.1) // 10% threshold exactly like JavaScript
+                {
+                    // Significant variation - include min, max, and average
+                    decimatedValues.Add(min);
+                    decimatedValues.Add(max);
+                    decimatedValues.Add(avg);
+                }
+                else
+                {
+                    // Small variation - just average
+                    decimatedValues.Add(avg);
+                }
             }
         }
         
-        result.DecimatedValues = decimatedValues.ToArray();
-        result.DecimatedTime = decimatedTime.ToArray();
-        result.SpikesPreserved = spikesPreserved;
-        result.BucketsWithVariation = bucketsWithVariation;
-        
-        return result;
-    }
-    
-    /// <summary>
-    /// Bucket processing result
-    /// </summary>
-    private class BucketResult
-    {
-        public List<double> Values { get; set; } = new List<double>();
-        public List<double> Times { get; set; } = new List<double>();
-        public int SpikesPreserved { get; set; }
-        public bool HasSignificantVariation { get; set; }
-    }
-    
-    /// <summary>
-    /// Process a single bucket using MinMax-LTTB algorithm
-    /// Preserves spikes by including min, max, and average when significant variation detected
-    /// </summary>
-    private BucketResult ProcessBucket(ArraySegment<double> bucketValues, ArraySegment<double> bucketTimes)
-    {
-        var result = new BucketResult();
-        
-        if (bucketValues.Count == 0) return result;
-        
-        // Single point - just return it
-        if (bucketValues.Count == 1)
-        {
-            result.Values.Add(bucketValues[0]);
-            result.Times.Add(bucketTimes[0]);
-            return result;
-        }
-        
-        // Calculate statistics
-        var min = bucketValues.Min();
-        var max = bucketValues.Max();
-        var avg = bucketValues.Average();
-        var range = max - min;
-        
-        // Determine if bucket has significant variation (spike detection)
-        var spikeThreshold = Math.Max(DefaultSpikeThreshold * Math.Abs(avg), 0.001); // Prevent division by zero
-        var hasSignificantVariation = range > spikeThreshold;
-        
-        result.HasSignificantVariation = hasSignificantVariation;
-        
-        if (hasSignificantVariation && bucketValues.Count >= DefaultMinBucketSize)
-        {
-            // Significant variation - include min, max, and average (spike preservation)
-            var minIdx = bucketValues.ToArray().ToList().IndexOf(min);
-            var maxIdx = bucketValues.ToArray().ToList().IndexOf(max);
-            var midIdx = bucketValues.Count / 2;
-            
-            // Add points in time order to preserve signal shape
-            var points = new List<(double value, double time, int priority)>
-            {
-                (min, bucketTimes[minIdx], 1),
-                (max, bucketTimes[maxIdx], 1),
-                (bucketValues[midIdx], bucketTimes[midIdx], 2)
-            };
-            
-            // Sort by time to maintain chronological order
-            points.Sort((a, b) => a.time.CompareTo(b.time));
-            
-            // Add up to MaxPointsPerBucket points
-            var pointsToAdd = Math.Min(DefaultMaxPointsPerBucket, points.Count);
-            for (int i = 0; i < pointsToAdd; i++)
-            {
-                result.Values.Add(points[i].value);
-                result.Times.Add(points[i].time);
-            }
-            
-            result.SpikesPreserved = pointsToAdd > 1 ? 1 : 0;
-        }
-        else
-        {
-            // Small variation - just use average (or middle point for time alignment)
-            var midIdx = bucketValues.Count / 2;
-            result.Values.Add(bucketValues[midIdx]);
-            result.Times.Add(bucketTimes[midIdx]);
-        }
-        
-        return result;
+        return decimatedValues.ToArray();
     }
     
     /// <summary>
@@ -632,19 +516,18 @@ public class BinFileProcessor : IBinFileProcessor
     }
     
     /// <summary>
-    /// Performs welding calculations exactly as in Form1.cs
-    /// Called during sequential reading for real-time calculation
+    /// Performs welding calculations exactly as JavaScript
+    /// Called immediately after each channel is read for real-time calculation
     /// </summary>
     private void PerformWeldingCalculations(
         int channel, 
         double[] currentValues, 
-        Dictionary<int, List<double>> calculatedChannelLists,
-        int[] localIdx)
+        Dictionary<int, List<double>> calculatedChannelLists)
     {
         // Intermediate calculations (not exposed in API)
         double ul3l1, il2gr1, il2gr2;
         
-        // Match Form1.cs calculation logic exactly
+        // Match JavaScript calculation logic exactly
         switch (channel)
         {
             case 1: // After UL2L3 is read
@@ -682,16 +565,21 @@ public class BinFileProcessor : IBinFileProcessor
         }
     }
     
+    /// <summary>
+    /// Convert ADC to engineering units using exact JavaScript formula
+    /// </summary>
     public double ConvertToEngineeringUnits(short rawValue, uint channelRange, short maxADCValue, short scalingFactor)
     {
-        // Convert raw ADC to millivolts using PicoConnect probe ranges
-        var millivolts = (rawValue * InputRanges[channelRange]) / (double)maxADCValue;
-        
-        // Apply scaling factor to get final engineering units (V, A, Bar)
-        return (scalingFactor / 1000.0) * millivolts;
+        // Use exact JavaScript logic
+        var voltageRangeMillivolts = channelRange < VOLTAGE_RANGES.Length ? VOLTAGE_RANGES[channelRange] : 5000;
+        var millivolts = ((double)rawValue / maxADCValue) * voltageRangeMillivolts;
+        var physicalValue = (scalingFactor / 1000.0) * millivolts;
+        return physicalValue;
     }
     
+    /// <summary>
     /// Extracts version information from header string
+    /// </summary>
     private static string ExtractVersionFromHeader(string header)
     {
         // Extract version from "Binary data from Picoscope. Use ScottPlotApp to read back. V1.3"
@@ -699,7 +587,9 @@ public class BinFileProcessor : IBinFileProcessor
         return versionStart >= 0 ? header.Substring(versionStart) : "Unknown";
     }
     
+    /// <summary>
     /// Skips binary header section to reach data by re-reading metadata
+    /// </summary>
     private async Task SkipHeaderAsync(BinaryReader reader)
     {
         // Reset to beginning and read through all header data

@@ -6,7 +6,7 @@
         <div class="flex items-center justify-between">
             <div class="bin-oscilloscope-title">
                 <h3 class="card-title">Binary Oscilloscope</h3>
-                <p class="text-sm text-secondary">Welding Parameter Visualization (4 Calculated Channels)</p>
+                <p class="text-sm text-secondary">Complete Oscilloscope Data (8 Raw + 4 Calculated Channels)</p>
             </div>
             
             <div class="bin-oscilloscope-actions">
@@ -24,47 +24,120 @@
     <div class="bin-oscilloscope-controls card-body">
         <div class="channel-groups">
             
-            <!-- DC Voltage Channel Group -->
-            <div class="channel-group dc-voltage-group">
-                <div class="channel-group-title">DC Voltage</div>
+            <!-- Raw Voltage Channels Group (0-1) -->
+            <div class="channel-group voltage-group">
+                <div class="channel-group-title">Raw Voltage</div>
                 <div class="channel-toggles">
                     <div class="channel-toggle">
-                        <input data-bind="channel10Checkbox" type="checkbox" id="channel-10" class="channel-checkbox" checked>
-                        <label for="channel-10" class="channel-label">U_DC*</label>
+                        <input data-bind="channel0Checkbox" type="checkbox" id="channel-0" class="channel-checkbox" checked>
+                        <label for="channel-0" class="channel-label">UL1L2</label>
+                        <span class="channel-unit">V</span>
+                    </div>
+                    <div class="channel-toggle">
+                        <input data-bind="channel1Checkbox" type="checkbox" id="channel-1" class="channel-checkbox" checked>
+                        <label for="channel-1" class="channel-label">UL2L3</label>
                         <span class="channel-unit">V</span>
                     </div>
                 </div>
             </div>
             
-            <!-- DC Current Channels Group -->
-            <div class="channel-group dc-current-group">
-                <div class="channel-group-title">DC Current</div>
+            <!-- Raw Current Channels Group (2-5) -->
+            <div class="channel-group current-group">
+                <div class="channel-group-title">Raw Current</div>
                 <div class="channel-toggles">
                     <div class="channel-toggle">
-                        <input data-bind="channel8Checkbox" type="checkbox" id="channel-8" class="channel-checkbox" checked>
-                        <label for="channel-8" class="channel-label">I_DC_GR1*</label>
+                        <input data-bind="channel2Checkbox" type="checkbox" id="channel-2" class="channel-checkbox" checked>
+                        <label for="channel-2" class="channel-label">IL1GR1</label>
                         <span class="channel-unit">A</span>
                     </div>
                     <div class="channel-toggle">
-                        <input data-bind="channel9Checkbox" type="checkbox" id="channel-9" class="channel-checkbox" checked>
-                        <label for="channel-9" class="channel-label">I_DC_GR2*</label>
+                        <input data-bind="channel3Checkbox" type="checkbox" id="channel-3" class="channel-checkbox" checked>
+                        <label for="channel-3" class="channel-label">IL3GR1</label>
+                        <span class="channel-unit">A</span>
+                    </div>
+                    <div class="channel-toggle">
+                        <input data-bind="channel4Checkbox" type="checkbox" id="channel-4" class="channel-checkbox" checked>
+                        <label for="channel-4" class="channel-label">IL1GR2</label>
+                        <span class="channel-unit">A</span>
+                    </div>
+                    <div class="channel-toggle">
+                        <input data-bind="channel5Checkbox" type="checkbox" id="channel-5" class="channel-checkbox" checked>
+                        <label for="channel-5" class="channel-label">IL3GR2</label>
                         <span class="channel-unit">A</span>
                     </div>
                 </div>
             </div>
             
-            <!-- Force Channel Group -->
-            <div class="channel-group force-group">
-                <div class="channel-group-title">Force</div>
+            <!-- Raw Pressure Channels Group (6-7) -->
+            <div class="channel-group pressure-group">
+                <div class="channel-group-title">Raw Pressure</div>
                 <div class="channel-toggles">
                     <div class="channel-toggle">
-                        <input data-bind="channel11Checkbox" type="checkbox" id="channel-11" class="channel-checkbox" checked>
-                        <label for="channel-11" class="channel-label">F_Schlitten*</label>
-                        <span class="channel-unit">kN</span>
+                        <input data-bind="channel6Checkbox" type="checkbox" id="channel-6" class="channel-checkbox" checked>
+                        <label for="channel-6" class="channel-label">P_Vor</label>
+                        <span class="channel-unit">Bar</span>
+                    </div>
+                    <div class="channel-toggle">
+                        <input data-bind="channel7Checkbox" type="checkbox" id="channel-7" class="channel-checkbox" checked>
+                        <label for="channel-7" class="channel-label">P_Rueck</label>
+                        <span class="channel-unit">Bar</span>
                     </div>
                 </div>
             </div>
             
+        </div>
+        
+        <!-- Calculated Parameters Section -->
+        <div class="calculated-channels-section">
+            <div class="calculated-channels-header">
+                <h4>Calculated Welding Parameters</h4>
+                <p class="text-xs text-muted">Derived from raw oscilloscope measurements</p>
+            </div>
+            
+            <div class="calculated-channel-groups">
+                
+                <!-- DC Voltage Channel Group (10) -->
+                <div class="channel-group dc-voltage-group">
+                    <div class="channel-group-title">DC Voltage</div>
+                    <div class="channel-toggles">
+                        <div class="channel-toggle">
+                            <input data-bind="channel10Checkbox" type="checkbox" id="channel-10" class="channel-checkbox" checked>
+                            <label for="channel-10" class="channel-label">U_DC*</label>
+                            <span class="channel-unit">V</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- DC Current Channels Group (8-9) -->
+                <div class="channel-group dc-current-group">
+                    <div class="channel-group-title">DC Current</div>
+                    <div class="channel-toggles">
+                        <div class="channel-toggle">
+                            <input data-bind="channel8Checkbox" type="checkbox" id="channel-8" class="channel-checkbox" checked>
+                            <label for="channel-8" class="channel-label">I_DC_GR1*</label>
+                            <span class="channel-unit">A</span>
+                        </div>
+                        <div class="channel-toggle">
+                            <input data-bind="channel9Checkbox" type="checkbox" id="channel-9" class="channel-checkbox" checked>
+                            <label for="channel-9" class="channel-label">I_DC_GR2*</label>
+                            <span class="channel-unit">A</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Force Channel Group (11) -->
+                <div class="channel-group force-group">
+                    <div class="channel-group-title">Force</div>
+                    <div class="channel-toggles">
+                        <div class="channel-toggle">
+                            <input data-bind="channel11Checkbox" type="checkbox" id="channel-11" class="channel-checkbox" checked>
+                            <label for="channel-11" class="channel-label">F_Schlitten*</label>
+                            <span class="channel-unit">kN</span>
+                        </div>
+                    </div>
+                </div>
+                
+            </div>
         </div>
         
         <!-- Status Display -->

@@ -1,7 +1,7 @@
 /**
- * Binary Oscilloscope Module - Styling
- * Welding Parameter Visualization (4 Calculated Channels)
- * Shows DC voltage, DC current, and force parameters
+ * Binary Oscilloscope Module - Complete Styling
+ * All Oscilloscope Data Visualization (8 Raw + 4 Calculated Channels)
+ * Shows raw oscilloscope data + calculated welding parameters
  */
 
 /* === MODULE CONTAINER === */
@@ -57,18 +57,54 @@
     padding: var(--spacing-lg);
 }
 
+/* === RAW CHANNELS SECTION === */
 .channel-groups {
     display: grid;
     grid-template-columns: 1fr 2fr 1fr;
     gap: var(--spacing-xl);
+    margin-bottom: var(--spacing-xl);
+}
+
+/* === CALCULATED CHANNELS SECTION === */
+.calculated-channels-section {
+    border-top: 2px solid var(--border-light);
+    padding-top: var(--spacing-lg);
+    margin-top: var(--spacing-lg);
+}
+
+.calculated-channels-header {
+    text-align: center;
     margin-bottom: var(--spacing-lg);
 }
 
+.calculated-channels-header h4 {
+    color: var(--schlatter-blue);
+    font-size: var(--font-lg);
+    font-weight: var(--font-semibold);
+    margin: 0 0 var(--spacing-xs) 0;
+    text-transform: uppercase;
+    letter-spacing: 0.025em;
+}
+
+.calculated-channels-header p {
+    color: var(--text-muted);
+    margin: 0;
+    font-style: italic;
+}
+
+.calculated-channel-groups {
+    display: grid;
+    grid-template-columns: 1fr 2fr 1fr;
+    gap: var(--spacing-xl);
+}
+
+/* === INDIVIDUAL CHANNEL GROUPS === */
 .channel-group {
     background-color: var(--bg-white);
     border: 1px solid var(--border-light);
     border-radius: var(--border-radius);
     padding: var(--spacing-md);
+    position: relative;
 }
 
 .channel-group-title {
@@ -116,14 +152,6 @@
     margin: 0;
     flex: 1;
     font-family: var(--font-family-mono);
-    font-style: italic; /* Italicize calculated channel names */
-}
-
-.channel-label::after {
-    content: '';
-    color: var(--schlatter-blue);
-    font-weight: bold;
-    opacity: 0.7;
 }
 
 .channel-unit {
@@ -133,37 +161,120 @@
     background-color: var(--bg-light);
     padding: 2px 6px;
     border-radius: var(--border-radius-sm);
-    min-width: 28px; /* Accommodate 'kN' width */
+    min-width: 32px;
     text-align: center;
 }
 
-/* === WELDING PARAMETER GROUP SPECIFIC STYLING === */
-.dc-voltage-group {
-    border-left: 3px solid #1f77b4;
+/* === RAW CHANNEL GROUP SPECIFIC STYLING === */
+.voltage-group {
+    border-left: 4px solid #1f77b4;
 }
 
-.dc-voltage-group .channel-group-title {
+.voltage-group .channel-group-title {
     color: #1f77b4;
 }
 
-.dc-current-group {
-    border-left: 3px solid #ff7f0e;
+.voltage-group .channel-toggle:hover {
+    background-color: rgba(31, 119, 180, 0.05);
+    border-color: rgba(31, 119, 180, 0.2);
 }
 
-.dc-current-group .channel-group-title {
-    color: #ff7f0e;
+.current-group {
+    border-left: 4px solid #2ca02c;
 }
 
-.force-group {
-    border-left: 3px solid #2ca02c;
-}
-
-.force-group .channel-group-title {
+.current-group .channel-group-title {
     color: #2ca02c;
 }
 
-/* === LEGACY GROUP STYLING (REMOVED) === */
-/* Removed .voltage-group, .current-group, .pressure-group as they're no longer used */
+.current-group .channel-toggle:hover {
+    background-color: rgba(44, 160, 44, 0.05);
+    border-color: rgba(44, 160, 44, 0.2);
+}
+
+.pressure-group {
+    border-left: 4px solid #e377c2;
+}
+
+.pressure-group .channel-group-title {
+    color: #e377c2;
+}
+
+.pressure-group .channel-toggle:hover {
+    background-color: rgba(227, 119, 194, 0.05);
+    border-color: rgba(227, 119, 194, 0.2);
+}
+
+/* === CALCULATED CHANNEL GROUP SPECIFIC STYLING === */
+.dc-voltage-group {
+    border-left: 4px solid #4169e1;
+    background: linear-gradient(135deg, rgba(65, 105, 225, 0.02), transparent);
+}
+
+.dc-voltage-group .channel-group-title {
+    color: #4169e1;
+}
+
+.dc-voltage-group .channel-toggle:hover {
+    background-color: rgba(65, 105, 225, 0.08);
+    border-color: rgba(65, 105, 225, 0.3);
+}
+
+.dc-current-group {
+    border-left: 4px solid #ff4500;
+    background: linear-gradient(135deg, rgba(255, 69, 0, 0.02), transparent);
+}
+
+.dc-current-group .channel-group-title {
+    color: #ff4500;
+}
+
+.dc-current-group .channel-toggle:hover {
+    background-color: rgba(255, 69, 0, 0.08);
+    border-color: rgba(255, 69, 0, 0.3);
+}
+
+.force-group {
+    border-left: 4px solid #32cd32;
+    background: linear-gradient(135deg, rgba(50, 205, 50, 0.02), transparent);
+}
+
+.force-group .channel-group-title {
+    color: #32cd32;
+}
+
+.force-group .channel-toggle:hover {
+    background-color: rgba(50, 205, 50, 0.08);
+    border-color: rgba(50, 205, 50, 0.3);
+}
+
+/* === CALCULATED CHANNEL VISUAL INDICATORS === */
+.dc-voltage-group::before,
+.dc-current-group::before,
+.force-group::before {
+    content: '★';
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 12px;
+    opacity: 0.6;
+    color: var(--schlatter-blue);
+}
+
+/* === CALCULATED CHANNEL LABELS === */
+.calculated-channel-groups .channel-label {
+    font-style: italic;
+    color: var(--text-primary);
+    font-weight: var(--font-semibold);
+}
+
+.calculated-channel-groups .channel-label::after {
+    content: ' (calc)';
+    font-size: var(--font-xs);
+    color: var(--text-muted);
+    font-style: normal;
+    font-weight: var(--font-normal);
+}
 
 /* === STATUS DISPLAY === */
 .status-display {
@@ -284,26 +395,19 @@
     cursor: not-allowed;
 }
 
-/* === WELDING PARAMETER SPECIFIC ENHANCEMENTS === */
-.dc-voltage-group .channel-toggle:hover {
-    background-color: rgba(31, 119, 180, 0.05);
-    border-color: rgba(31, 119, 180, 0.2);
-}
-
-.dc-current-group .channel-toggle:hover {
-    background-color: rgba(255, 127, 14, 0.05);
-    border-color: rgba(255, 127, 14, 0.2);
-}
-
-.force-group .channel-toggle:hover {
-    background-color: rgba(44, 160, 44, 0.05);
-    border-color: rgba(44, 160, 44, 0.2);
-}
-
 /* === RESPONSIVE ADJUSTMENTS === */
+@media (max-width: 1400px) {
+    .channel-groups,
+    .calculated-channel-groups {
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: var(--spacing-lg);
+    }
+}
+
 @media (max-width: 1200px) {
-    .channel-groups {
-        grid-template-columns: 1fr;
+    .channel-groups,
+    .calculated-channel-groups {
+        grid-template-columns: 1fr 1fr;
         gap: var(--spacing-lg);
     }
     
@@ -319,7 +423,9 @@
         gap: var(--spacing-sm);
     }
     
-    .channel-groups {
+    .channel-groups,
+    .calculated-channel-groups {
+        grid-template-columns: 1fr;
         gap: var(--spacing-md);
     }
     
@@ -327,6 +433,11 @@
         grid-template-columns: 1fr;
         gap: var(--spacing-sm);
         text-align: center;
+    }
+    
+    .calculated-channels-section {
+        margin-top: var(--spacing-md);
+        padding-top: var(--spacing-md);
     }
 }
 
@@ -358,38 +469,57 @@
     display: none !important;
 }
 
-/* === WELDING PARAMETER VISUAL INDICATORS === */
-.channel-group::before {
+/* === SECTION DIVIDERS === */
+.calculated-channels-section::before {
     content: '';
     position: absolute;
-    top: 8px;
-    right: 8px;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    opacity: 0.6;
+    left: 50%;
+    top: -1px;
+    transform: translateX(-50%);
+    width: 100px;
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--schlatter-blue), transparent);
 }
 
-.dc-voltage-group {
-    position: relative;
+/* === ENHANCED HOVER EFFECTS === */
+.channel-group:hover {
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-1px);
+    transition: all var(--transition-fast);
 }
 
-.dc-voltage-group::before {
-    background-color: #1f77b4;
+.calculated-channel-groups .channel-group:hover {
+    box-shadow: var(--shadow-md);
+    transform: translateY(-2px);
 }
 
-.dc-current-group {
-    position: relative;
+/* === GROUP HEADERS WITH ICONS === */
+.voltage-group .channel-group-title::before {
+    content: '⚡';
+    margin-right: var(--spacing-xs);
 }
 
-.dc-current-group::before {
-    background-color: #ff7f0e;
+.current-group .channel-group-title::before {
+    content: '🔋';
+    margin-right: var(--spacing-xs);
 }
 
-.force-group {
-    position: relative;
+.pressure-group .channel-group-title::before {
+    content: '📊';
+    margin-right: var(--spacing-xs);
 }
 
-.force-group::before {
-    background-color: #2ca02c;
+.dc-voltage-group .channel-group-title::before {
+    content: '⚡';
+    margin-right: var(--spacing-xs);
+}
+
+.dc-current-group .channel-group-title::before {
+    content: '🔋';
+    margin-right: var(--spacing-xs);
+}
+
+.force-group .channel-group-title::before {
+    content: '💪';
+    margin-right: var(--spacing-xs);
 }

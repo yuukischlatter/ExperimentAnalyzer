@@ -4,7 +4,7 @@ namespace ExperimentAnalyzer.Configuration;
 /// Configuration settings for binary oscilloscope data processing
 /// Binds to "BinOscilloscopeSettings" section in appsettings.json
 /// Supports sequential reading approach with automatic temp file optimization
-/// Includes smart MinMax-LTTB decimation for browser compatibility
+/// Uses simple decimation matching JavaScript approach
 /// </summary>
 public class BinOscilloscopeSettings
 {
@@ -22,7 +22,7 @@ public class BinOscilloscopeSettings
     
     /// <summary>
     /// Timeout for processing operations in seconds
-    /// Default: 5 minutes for large file processing (reduced from 10min due to temp file optimization)
+    /// Default: 5 minutes for large file processing
     /// </summary>
     public int ProcessingTimeoutSeconds { get; set; } = 300;
     
@@ -63,7 +63,7 @@ public class BinOscilloscopeSettings
     /// </summary>
     public int TempFileReuseMaxAgeHours { get; set; } = 1;
 
-    // Smart decimation settings (Phase 2)
+    // Simple decimation settings (matching JavaScript)
     /// <summary>
     /// Default maximum points for browser compatibility
     /// Default: 2000 points (safe for all browsers, good performance)
@@ -77,31 +77,10 @@ public class BinOscilloscopeSettings
     public int MaxAllowedPoints { get; set; } = 10000;
     
     /// <summary>
-    /// Enable smart MinMax-LTTB decimation with spike preservation
-    /// Default: true (uses intelligent algorithm to preserve signal characteristics)
+    /// Enable simple decimation with spike preservation (matches JavaScript approach)
+    /// Default: true (uses simple step-based algorithm to preserve signal characteristics)
     /// </summary>
     public bool EnableSmartDecimation { get; set; } = true;
-    
-    /// <summary>
-    /// Spike detection threshold for preserving important signal variations
-    /// Default: 0.1 (10% variation threshold - signals with >10% variation get spike preservation)
-    /// Range: 0.01 (1% - very sensitive) to 0.5 (50% - only major spikes)
-    /// </summary>
-    public double SpikeDetectionThreshold { get; set; } = 0.1;
-    
-    /// <summary>
-    /// Minimum bucket size for smart decimation algorithm
-    /// Default: 3 (each bucket needs at least 3 points to analyze variation)
-    /// Range: 1 (no minimum) to 10 (large buckets, less detail)
-    /// </summary>
-    public int MinBucketSize { get; set; } = 3;
-    
-    /// <summary>
-    /// Maximum points per bucket for spike preservation
-    /// Default: 3 (min + max + average when significant variation detected)
-    /// Range: 1 (just average) to 5 (very detailed spike preservation)
-    /// </summary>
-    public int MaxPointsPerBucket { get; set; } = 3;
 
     // Welding calculation constants - can be overridden via configuration
     /// <summary>
@@ -178,27 +157,8 @@ public class BinOscilloscopeSettings
     /// Default: true (helps with monitoring temp file system)
     /// </summary>
     public bool LogTempFileOperations { get; set; } = true;
-    
-    /// <summary>
-    /// Whether to log smart decimation statistics (spikes preserved, buckets processed)
-    /// Default: true (helps with monitoring decimation quality)
-    /// </summary>
-    public bool LogDecimationStatistics { get; set; } = true;
 
-    // Channel label validation (optional - can be used for validation)
-    /// <summary>
-    /// Expected labels for raw oscilloscope channels (channels 0-7)
-    /// Used for validation if not empty
-    /// </summary>
-    public string[] ExpectedRawChannelLabels { get; set; } = Array.Empty<string>();
-    
-    /// <summary>
-    /// Expected units for raw oscilloscope channels (channels 0-7)
-    /// Used for validation if not empty  
-    /// </summary>
-    public string[] ExpectedRawChannelUnits { get; set; } = Array.Empty<string>();
-
-    // Helper methods for validation and smart decimation
+    // Helper methods for validation and simple decimation
     /// <summary>
     /// Validates if a DC current value is within reasonable bounds
     /// </summary>
@@ -272,33 +232,10 @@ public class BinOscilloscopeSettings
     }
     
     /// <summary>
-    /// Determines if smart decimation should be applied based on settings and data size
+    /// Determines if simple decimation should be applied based on settings and data size
     /// </summary>
-    public bool ShouldApplySmartDecimation(int totalPoints, int maxPoints)
+    public bool ShouldApplySimpleDecimation(int totalPoints, int maxPoints)
     {
-        return EnableSmartDecimation && totalPoints > maxPoints && totalPoints > MinBucketSize;
-    }
-    
-    /// <summary>
-    /// Validates smart decimation configuration is properly set up
-    /// </summary>
-    public bool IsSmartDecimationConfigured()
-    {
-        return EnableSmartDecimation && 
-               SpikeDetectionThreshold > 0 && SpikeDetectionThreshold < 1.0 &&
-               MinBucketSize >= 1 && MinBucketSize <= 100 &&
-               MaxPointsPerBucket >= 1 && MaxPointsPerBucket <= 10 &&
-               DefaultMaxPoints > 0 && MaxAllowedPoints >= DefaultMaxPoints;
-    }
-    
-    /// <summary>
-    /// Gets a summary of smart decimation configuration for logging
-    /// </summary>
-    public string GetSmartDecimationConfigSummary()
-    {
-        return $"Smart Decimation Config: Enabled={EnableSmartDecimation}, " +
-               $"SpikeThreshold={SpikeDetectionThreshold:P1}, " +
-               $"MinBucket={MinBucketSize}, MaxPerBucket={MaxPointsPerBucket}, " +
-               $"DefaultPoints={DefaultMaxPoints}, MaxPoints={MaxAllowedPoints}";
+        return EnableSmartDecimation && totalPoints > maxPoints;
     }
 }

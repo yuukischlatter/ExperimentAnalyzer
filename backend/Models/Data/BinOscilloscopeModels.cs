@@ -61,7 +61,7 @@ public class BinOscilloscopeData
     /// <summary>Raw pressure P_Rueck channel index</summary>
     public const int CHANNEL_P_RUECK = 7;
 
-    // Welding calculation constants
+    // Welding calculation constants (must match JavaScript exactly)
     /// <summary>Transformer current multiplier used in welding calculations</summary>
     public const double TRAFO_CURRENT_MULTIPLIER = 35.0;
     
@@ -93,7 +93,7 @@ public class ChannelData
     /// Original downsampling ratio from recording [1,1,10,10,10,10,10,10]
     public int OriginalDownsampling { get; set; }
     
-    /// Additional decimation applied for this request (always 1 for full resolution)
+    /// Additional decimation applied for this request
     public int AdditionalDecimation { get; set; }
     
     /// Scaling factor from header [100,100,100,100,100,100,350,350]
