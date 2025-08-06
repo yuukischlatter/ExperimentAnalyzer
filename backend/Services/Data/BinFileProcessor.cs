@@ -117,26 +117,37 @@ public class BinFileProcessor : IBinFileProcessor
         
         return data;
     }
-    
+
     public async Task<BinOscilloscopeData> GetTimeRangeDataAsync(string binPath, double startTimeMs, double endTimeMs)
     {
         var metadata = await ReadMetadataAsync(binPath);
-        
-        if (startTimeMs < 0 || endTimeMs > metadata.TotalDurationMs || startTimeMs >= endTimeMs)
+
+        // Fix: Clamp time range to valid bounds instead of throwing error
+        var maxDuration = metadata.TotalDurationMs;
+
+        // Clamp to valid range
+        startTimeMs = Math.Max(0, Math.Min(startTimeMs, maxDuration));
+        endTimeMs = Math.Max(startTimeMs + 1, Math.Min(endTimeMs, maxDuration));
+
+        // If the requested range is outside bounds, just use overview data
+        if (startTimeMs >= maxDuration || endTimeMs <= 0)
         {
-            throw new ArgumentException($"Invalid time range: {startTimeMs}-{endTimeMs}ms (file duration: {metadata.TotalDurationMs}ms)");
+            _logger.LogWarning("Requested time range {Start}-{End}ms outside file duration {Duration}ms, returning overview",
+                startTimeMs, endTimeMs, maxDuration);
+            return await GetOverviewDataAsync(binPath);
         }
-        
+
         var timeRange = new TimeRange { StartTimeMs = startTimeMs, EndTimeMs = endTimeMs };
-        
-        _logger.LogInformation("Loading time range: {Start}-{End}ms ({Duration}ms)", 
-            startTimeMs, endTimeMs, timeRange.DurationMs);
-        
+
+        _logger.LogInformation("Loading time range: {Start}-{End}ms ({Duration}ms) from file duration {FileDuration}ms",
+            startTimeMs, endTimeMs, timeRange.DurationMs, maxDuration);
+
         var data = await LoadBinaryDataInternalAsync(binPath, metadata, timeRange, 1);
         data.RequestedRange = timeRange;
-        
+
         return data;
     }
+
     
     /// Core binary data loading method with optional time range and decimation
     
