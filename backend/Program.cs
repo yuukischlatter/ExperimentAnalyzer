@@ -4,7 +4,7 @@ using Microsoft.Extensions.FileProviders;
 using ExperimentAnalyzer.Database.Interfaces;
 using ExperimentAnalyzer.Database.Repositories;
 using ExperimentAnalyzer.Services.Startup;
-using ExperimentAnalyzer.Services.Data; // ADD THIS LINE
+using ExperimentAnalyzer.Services.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,6 +12,13 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+
+// Add logging
+builder.Services.AddLogging(config =>
+{
+    config.AddConsole();
+    config.AddDebug();
+});
 
 // Database connection
 builder.Services.AddSingleton<IDbConnection>(provider =>
@@ -24,19 +31,38 @@ builder.Services.AddSingleton<IDbConnection>(provider =>
 // Repository
 builder.Services.AddScoped<IExperimentRepository, ExperimentRepository>();
 
-// ADD THIS LINE - Register BinaryDataProcessor
-builder.Services.AddScoped<BinaryDataProcessor>();
+// Data Services - IMPORTANT: Register in correct order
+builder.Services.AddScoped<DataResampler>();           // NEW: Register DataResampler first
+builder.Services.AddScoped<BinaryDataProcessor>();     // BinaryDataProcessor depends on DataResampler
 
 // Startup services
 builder.Services.AddScoped<DirectoryScanner>();
 builder.Services.AddScoped<JournalParser>();
 builder.Services.AddScoped<StartupDataService>();
 
+// Configure CORS for development (if needed)
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("DevelopmentPolicy",
+        policy =>
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        });
+});
+
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
 app.UseSwagger();
 app.UseSwaggerUI();
+
+// Use CORS in development
+if (app.Environment.IsDevelopment())
+{
+    app.UseCors("DevelopmentPolicy");
+}
 
 // Configure static file serving for frontend
 var frontendPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "frontend");
@@ -83,6 +109,14 @@ using (var scope = app.Services.CreateScope())
         {
             var count = await repository.GetExperimentCountAsync();
             Console.WriteLine($"Data initialization completed successfully. Total experiments: {count}");
+            
+            // Log service registration status
+            Console.WriteLine("=== Service Registration Status ===");
+            Console.WriteLine("✓ DataResampler: Registered");
+            Console.WriteLine("✓ BinaryDataProcessor: Registered (with DataResampler dependency)");
+            Console.WriteLine("✓ Database: Connected");
+            Console.WriteLine("✓ Repository: Ready");
+            Console.WriteLine("===================================");
         }
         else
         {
@@ -93,8 +127,22 @@ using (var scope = app.Services.CreateScope())
     {
         Console.WriteLine($"Startup failed: {ex.Message}");
         Console.WriteLine("Application will continue but data may not be available");
+        
+        // Log the full exception in development
+        if (app.Environment.IsDevelopment())
+        {
+            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+        }
     }
 }
+
+// Log the server URLs
+Console.WriteLine("\n=== Server Information ===");
+Console.WriteLine($"Environment: {app.Environment.EnvironmentName}");
+Console.WriteLine($"Server starting on: {builder.WebHost.GetSetting("urls") ?? "http://localhost:5000"}");
+Console.WriteLine($"API Documentation: http://localhost:5000/swagger");
+Console.WriteLine($"Frontend: http://localhost:5000");
+Console.WriteLine("==========================\n");
 
 Console.WriteLine("Starting web server...");
 await app.RunAsync();

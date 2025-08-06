@@ -1,381 +1,362 @@
 using Microsoft.AspNetCore.Mvc;
 using ExperimentAnalyzer.Database.Interfaces;
-using ExperimentAnalyzer.Models.Api;
 using ExperimentAnalyzer.Services.Data;
+using System.Text.Json;
 
 namespace ExperimentAnalyzer.WebApi.Controllers.Data;
 
+/// <summary>
+/// Binary data controller matching JS API exactly
+/// Endpoints match the old Node.js server endpoints 1:1
+/// </summary>
 [ApiController]
-[Route("api/experiments/{experimentId}/binary")]
+[Route("api")]
 public class BinaryDataController : ControllerBase
 {
     private readonly IExperimentRepository _repository;
     private readonly BinaryDataProcessor _binaryProcessor;
+    private readonly ILogger<BinaryDataController> _logger;
 
-    public BinaryDataController(IExperimentRepository repository, BinaryDataProcessor binaryProcessor)
+    public BinaryDataController(
+        IExperimentRepository repository, 
+        BinaryDataProcessor binaryProcessor,
+        ILogger<BinaryDataController> logger)
     {
         _repository = repository;
         _binaryProcessor = binaryProcessor;
+        _logger = logger;
     }
 
     /// <summary>
-    /// Get binary file metadata (channels, duration, sampling info)
-    /// GET /api/experiments/{experimentId}/binary/metadata
+    /// Get binary file metadata - MATCHES JS: /api/experiment/{folderName}/metadata
     /// </summary>
-    [HttpGet("metadata")]
-    public async Task<ActionResult<ApiResponse<object>>> GetBinaryMetadata(string experimentId)
+    [HttpGet("experiment/{experimentId}/metadata")]
+    public async Task<IActionResult> GetMetadata(string experimentId)
     {
         try
         {
             var experiment = await _repository.GetExperimentAsync(experimentId);
             if (experiment == null)
             {
-                return NotFound(CreateErrorResponse("Experiment not found"));
+                return NotFound(new { error = "Experiment not found" });
             }
 
             if (!experiment.HasBinFile)
             {
-                return NotFound(CreateErrorResponse("No binary file available for this experiment"));
+                return NotFound(new { error = "No binary file available" });
             }
 
             var binFilePath = GetBinaryFilePath(experiment);
             if (!System.IO.File.Exists(binFilePath))
             {
-                return NotFound(CreateErrorResponse("Binary file not found on disk"));
+                return NotFound(new { error = "Binary file not found on disk" });
             }
 
             var metadata = await _binaryProcessor.ReadMetadataAsync(binFilePath);
 
+            // Return JS-compatible structure (no success wrapper)
             var response = new
             {
-                experimentId = experimentId,
                 channels = Enumerable.Range(0, 8).Select(i => new
                 {
                     index = i,
                     label = metadata.Labels[i],
                     unit = metadata.Units[i],
-                    color = GetChannelColor(i),
-                    yAxis = GetYAxisForUnit(metadata.Units[i])
+                    points = (int)(metadata.BufferSize / metadata.DownsamplingFactors[i]),
+                    duration = metadata.Duration
                 }).ToArray(),
-                totalChannels = 8,
+                totalPoints = (int)metadata.BufferSize,
                 duration = metadata.Duration,
-                samplingRate = metadata.SamplingRate,
-                samplingInterval = metadata.SamplingInterval,
-                startDateTime = metadata.StartDateTime,
-                bufferSize = metadata.BufferSize,
-                maxAdcValue = metadata.MaxAdcValue
+                samplingRate = metadata.SamplingRate
             };
 
-            return Ok(CreateSuccessResponse(response));
+            return Ok(response);
         }
         catch (Exception ex)
         {
-            return StatusCode(500, CreateErrorResponse($"Error reading binary metadata: {ex.Message}"));
+            _logger.LogError(ex, "Error reading metadata for experiment {ExperimentId}", experimentId);
+            return StatusCode(500, new { error = ex.Message });
         }
     }
 
     /// <summary>
-    /// Get list of all channels with basic info
-    /// GET /api/experiments/{experimentId}/binary/channels
+    /// Get data ranges for all channels - MATCHES JS: /api/experiment/{folderName}/ranges
     /// </summary>
-    [HttpGet("channels")]
-    public async Task<ActionResult<ApiResponse<object>>> GetChannelList(string experimentId)
+    [HttpGet("experiment/{experimentId}/ranges")]
+    public async Task<IActionResult> GetRanges(string experimentId)
     {
         try
         {
             var experiment = await _repository.GetExperimentAsync(experimentId);
             if (experiment == null)
             {
-                return NotFound(CreateErrorResponse("Experiment not found"));
+                return NotFound(new { error = "Experiment not found" });
             }
 
             if (!experiment.HasBinFile)
             {
-                return NotFound(CreateErrorResponse("No binary file available"));
+                return NotFound(new { error = "No binary file available" });
             }
 
             var binFilePath = GetBinaryFilePath(experiment);
-            var metadata = await _binaryProcessor.ReadMetadataAsync(binFilePath);
+            var ranges = await _binaryProcessor.GetDataRangesAsync(binFilePath);
 
-            var channels = Enumerable.Range(0, 8).Select(i => new
-            {
-                index = i,
-                label = metadata.Labels[i],
-                unit = metadata.Units[i],
-                color = GetChannelColor(i),
-                yAxis = GetYAxisForUnit(metadata.Units[i]),
-                downsamplingFactor = metadata.DownsamplingFactors[i],
-                channelRange = metadata.ChannelRanges[i],
-                channelScaling = metadata.ChannelScaling[i]
-            }).ToArray();
-
-            return Ok(CreateSuccessResponse(new { experimentId, channels }));
+            // Return JS-compatible structure (direct ranges object)
+            return Ok(ranges);
         }
         catch (Exception ex)
         {
-            return StatusCode(500, CreateErrorResponse($"Error reading channel list: {ex.Message}"));
+            _logger.LogError(ex, "Error getting ranges for experiment {ExperimentId}", experimentId);
+            return StatusCode(500, new { error = ex.Message });
         }
     }
 
     /// <summary>
-    /// Get channel data with time range filtering and resampling
-    /// GET /api/experiments/{experimentId}/binary/data/{channel}
-    /// Query parameters: startTime, endTime, maxPoints
+    /// Get channel data - MATCHES JS: /api/experiment/{folderName}/data/{channel}
+    /// Query params match JS exactly: start, end, maxPoints (not startTime, endTime)
     /// </summary>
-    [HttpGet("data/{channel:int}")]
-    public async Task<ActionResult<ApiResponse<object>>> GetChannelData(
+    [HttpGet("experiment/{experimentId}/data/{channel:int}")]
+    public async Task<IActionResult> GetChannelData(
         string experimentId, 
         int channel,
-        [FromQuery] double startTime = 0,
-        [FromQuery] double endTime = double.MaxValue,
-        [FromQuery] int maxPoints = 2000)
+        [FromQuery] double start = 0,              // Changed from startTime
+        [FromQuery] double? end = null,            // Changed from endTime
+        [FromQuery] int maxPoints = 2000)          // Same as JS default
     {
         try
         {
             // Validate channel
             if (channel < 0 || channel > 7)
             {
-                return BadRequest(CreateErrorResponse("Channel must be between 0 and 7"));
+                return BadRequest(new { error = "Channel must be between 0 and 7" });
             }
 
             // Validate parameters
             if (maxPoints <= 0 || maxPoints > 100000)
             {
-                return BadRequest(CreateErrorResponse("maxPoints must be between 1 and 100000"));
+                return BadRequest(new { error = "maxPoints must be between 1 and 100000" });
             }
 
-            if (startTime < 0)
+            if (start < 0)
             {
-                return BadRequest(CreateErrorResponse("startTime must be non-negative"));
-            }
-
-            if (endTime != double.MaxValue && endTime <= startTime)
-            {
-                return BadRequest(CreateErrorResponse("endTime must be greater than startTime"));
+                return BadRequest(new { error = "start must be non-negative" });
             }
 
             var experiment = await _repository.GetExperimentAsync(experimentId);
             if (experiment == null)
             {
-                return NotFound(CreateErrorResponse("Experiment not found"));
+                return NotFound(new { error = "Experiment not found" });
             }
 
             if (!experiment.HasBinFile)
             {
-                return NotFound(CreateErrorResponse("No binary file available"));
+                return NotFound(new { error = "No binary file available" });
             }
 
             var binFilePath = GetBinaryFilePath(experiment);
-            var channelData = await _binaryProcessor.ReadChannelDataAsync(
-                binFilePath, channel, startTime, endTime, maxPoints);
+            
+            // Use double.MaxValue if end not specified (like JS)
+            var endTime = end ?? double.MaxValue;
+            
+            if (endTime != double.MaxValue && endTime <= start)
+            {
+                return BadRequest(new { error = "end must be greater than start" });
+            }
 
+            var channelData = await _binaryProcessor.ReadChannelDataAsync(
+                binFilePath, channel, start, endTime, maxPoints);
+
+            // Return JS-compatible structure (direct data, no success wrapper)
             var response = new
             {
-                experimentId,
-                channel,
-                channelName = channelData.Label,
-                unit = channelData.Unit,
-                color = channelData.Color,
-                yAxis = GetYAxisForUnit(channelData.Unit),
                 time = channelData.Time,
                 values = channelData.Values,
-                meta = new
-                {
-                    startTime = startTime,
-                    endTime = endTime == double.MaxValue ? (double?)null : endTime,
-                    requestedMaxPoints = maxPoints,
-                    actualPoints = channelData.ActualPoints,
-                    downsamplingFactor = channelData.DownsamplingFactor,
-                    dataRange = new
-                    {
-                        min = channelData.MinValue,
-                        max = channelData.MaxValue
-                    }
-                }
+                samplingRate = channelData.SamplingRate,
+                meta = channelData.Meta
             };
 
-            return Ok(CreateSuccessResponse(response));
+            return Ok(response);
         }
         catch (Exception ex)
         {
-            return StatusCode(500, CreateErrorResponse($"Error reading channel data: {ex.Message}"));
+            _logger.LogError(ex, "Error reading channel {Channel} for experiment {ExperimentId}", 
+                channel, experimentId);
+            return StatusCode(500, new { error = ex.Message });
         }
     }
 
     /// <summary>
-    /// Get Y-axis ranges for all channels (for auto-scaling)
-    /// GET /api/experiments/{experimentId}/binary/ranges
+    /// Get FFT-specific data - MATCHES JS: /api/experiment/{folderName}/fft-data/{channel}
     /// </summary>
-    [HttpGet("ranges")]
-    public async Task<ActionResult<ApiResponse<object>>> GetDataRanges(string experimentId)
+    [HttpGet("experiment/{experimentId}/fft-data/{channel:int}")]
+    public async Task<IActionResult> GetFFTData(
+        string experimentId,
+        int channel,
+        [FromQuery] double start = 0,
+        [FromQuery] double? end = null,
+        [FromQuery] int maxPoints = 10000)  // Higher default for FFT
     {
         try
         {
+            if (channel < 0 || channel > 7)
+            {
+                return BadRequest(new { error = "Channel must be between 0 and 7" });
+            }
+
             var experiment = await _repository.GetExperimentAsync(experimentId);
             if (experiment == null)
             {
-                return NotFound(CreateErrorResponse("Experiment not found"));
+                return NotFound(new { error = "Experiment not found" });
             }
 
             if (!experiment.HasBinFile)
             {
-                return NotFound(CreateErrorResponse("No binary file available"));
+                return NotFound(new { error = "No binary file available" });
             }
 
             var binFilePath = GetBinaryFilePath(experiment);
-            var ranges = await _binaryProcessor.GetDataRangesAsync(binFilePath);
-
-            // Group ranges by Y-axis for multi-axis plotting
-            var axisRanges = new Dictionary<string, object>();
+            var endTime = end ?? double.MaxValue;
             
-            // Voltage axis (yaxis)
-            var voltageChannels = ranges.Where(r => r.Value.Unit == "V").ToList();
-            if (voltageChannels.Any())
-            {
-                axisRanges["voltage"] = new
-                {
-                    min = voltageChannels.Min(r => r.Value.Min),
-                    max = voltageChannels.Max(r => r.Value.Max),
-                    unit = "V",
-                    channels = voltageChannels.Select(r => r.Key).ToArray()
-                };
-            }
-
-            // Current axis (yaxis2)
-            var currentChannels = ranges.Where(r => r.Value.Unit == "A").ToList();
-            if (currentChannels.Any())
-            {
-                axisRanges["current"] = new
-                {
-                    min = currentChannels.Min(r => r.Value.Min),
-                    max = currentChannels.Max(r => r.Value.Max),
-                    unit = "A",
-                    channels = currentChannels.Select(r => r.Key).ToArray()
-                };
-            }
-
-            // Pressure axis (yaxis3)
-            var pressureChannels = ranges.Where(r => r.Value.Unit == "Bar").ToList();
-            if (pressureChannels.Any())
-            {
-                axisRanges["pressure"] = new
-                {
-                    min = pressureChannels.Min(r => r.Value.Min),
-                    max = pressureChannels.Max(r => r.Value.Max),
-                    unit = "Bar",
-                    channels = pressureChannels.Select(r => r.Key).ToArray()
-                };
-            }
-
+            // For FFT, we might want raw data instead of resampled
+            var rawData = await _binaryProcessor.GetRawChannelDataAsync(binFilePath, channel);
+            
+            // Find time indices
+            int startIdx = FindTimeIndex(rawData.Time, (float)start);
+            int endIdx = endTime == double.MaxValue ? 
+                rawData.Time.Length - 1 : 
+                FindTimeIndex(rawData.Time, (float)endTime);
+            
+            // Slice the data
+            int length = Math.Min(endIdx - startIdx + 1, maxPoints);
+            var timeSlice = new float[length];
+            var valueSlice = new float[length];
+            
+            Array.Copy(rawData.Time, startIdx, timeSlice, 0, length);
+            Array.Copy(rawData.Values, startIdx, valueSlice, 0, length);
+            
+            // Get metadata for sampling rate
+            var metadata = await _binaryProcessor.ReadMetadataAsync(binFilePath);
+            
             var response = new
             {
-                experimentId,
-                individualRanges = ranges.ToDictionary(
-                    r => r.Key,
-                    r => new
-                    {
-                        min = r.Value.Min,
-                        max = r.Value.Max,
-                        unit = r.Value.Unit,
-                        label = r.Value.Label
-                    }
-                ),
-                axisRanges = axisRanges
+                time = timeSlice,
+                values = valueSlice,
+                samplingRate = metadata.SamplingRate,
+                channel = new
+                {
+                    index = channel,
+                    label = rawData.Label,
+                    unit = rawData.Unit
+                },
+                meta = new
+                {
+                    timeRange = new { start, end = endTime == double.MaxValue ? rawData.Time[^1] : endTime },
+                    actualPoints = length,
+                    requestedMaxPoints = maxPoints
+                }
             };
 
-            return Ok(CreateSuccessResponse(response));
+            return Ok(response);
         }
         catch (Exception ex)
         {
-            return StatusCode(500, CreateErrorResponse($"Error calculating data ranges: {ex.Message}"));
+            _logger.LogError(ex, "Error getting FFT data for channel {Channel}", channel);
+            return StatusCode(500, new { error = ex.Message });
         }
     }
 
     /// <summary>
-    /// Get multiple channels at once (bulk endpoint for initial plot loading)
-    /// GET /api/experiments/{experimentId}/binary/data
-    /// Query parameters: channels (comma-separated), startTime, endTime, maxPoints
+    /// COMPATIBILITY: Also support the old endpoint format with /binary/ in path
+    /// This allows frontend to work with both old and new API paths
     /// </summary>
-    [HttpGet("data")]
-    public async Task<ActionResult<ApiResponse<object>>> GetMultipleChannelData(
+    [HttpGet("experiments/{experimentId}/binary/metadata")]
+    public async Task<IActionResult> GetMetadataCompat(string experimentId)
+    {
+        // Wrap response in success format for compatibility
+        var result = await GetMetadata(experimentId);
+        if (result is OkObjectResult okResult)
+        {
+            return Ok(new { success = true, data = okResult.Value });
+        }
+        return result;
+    }
+
+    [HttpGet("experiments/{experimentId}/binary/data/{channel:int}")]
+    public async Task<IActionResult> GetChannelDataCompat(
         string experimentId,
-        [FromQuery] string channels = "0,1,2,3,4,5,6,7",
-        [FromQuery] double startTime = 0,
-        [FromQuery] double endTime = double.MaxValue,
+        int channel,
+        [FromQuery] double startTime = 0,    // Old parameter names
+        [FromQuery] double? endTime = null,
         [FromQuery] int maxPoints = 2000)
     {
-        try
+        // Call main method with renamed parameters
+        var result = await GetChannelData(experimentId, channel, startTime, endTime, maxPoints);
+        
+        // Wrap in success format for compatibility
+        if (result is OkObjectResult okResult)
         {
-            // Parse channel list
-            var channelList = channels.Split(',')
-                .Select(c => int.TryParse(c.Trim(), out var ch) ? ch : -1)
-                .Where(c => c >= 0 && c <= 7)
-                .ToArray();
-
-            if (!channelList.Any())
-            {
-                return BadRequest(CreateErrorResponse("No valid channels specified"));
-            }
-
+            // Add additional wrapper fields for old frontend
+            var data = okResult.Value;
             var experiment = await _repository.GetExperimentAsync(experimentId);
-            if (experiment == null)
-            {
-                return NotFound(CreateErrorResponse("Experiment not found"));
-            }
-
-            if (!experiment.HasBinFile)
-            {
-                return NotFound(CreateErrorResponse("No binary file available"));
-            }
-
-            var binFilePath = GetBinaryFilePath(experiment);
-            var channelDataTasks = channelList.Select(async channel =>
-            {
-                var data = await _binaryProcessor.ReadChannelDataAsync(
-                    binFilePath, channel, startTime, endTime, maxPoints);
-                return new { channel, data };
-            });
-
-            var results = await Task.WhenAll(channelDataTasks);
+            var binFilePath = GetBinaryFilePath(experiment!);
+            var metadata = await _binaryProcessor.ReadMetadataAsync(binFilePath);
             
-            var response = new
-            {
-                experimentId,
-                channels = results.ToDictionary(
-                    r => $"channel_{r.channel}",
-                    r => new
-                    {
-                        index = r.channel,
-                        label = r.data.Label,
-                        unit = r.data.Unit,
-                        color = r.data.Color,
-                        yAxis = GetYAxisForUnit(r.data.Unit),
-                        time = r.data.Time,
-                        values = r.data.Values,
-                        actualPoints = r.data.ActualPoints,
-                        minValue = r.data.MinValue,
-                        maxValue = r.data.MaxValue
-                    }
-                ),
-                meta = new
+            return Ok(new 
+            { 
+                success = true, 
+                data = new
                 {
-                    startTime,
-                    endTime = endTime == double.MaxValue ? (double?)null : endTime,
-                    requestedMaxPoints = maxPoints,
-                    totalChannels = channelList.Length,
-                    totalPoints = results.Sum(r => r.data.ActualPoints)
+                    experimentId,
+                    channel,
+                    channelName = metadata.Labels[channel],
+                    unit = metadata.Units[channel],
+                    color = GetChannelColor(channel),
+                    yAxis = GetYAxisForUnit(metadata.Units[channel]),
+                    time = (data as dynamic)?.time,
+                    values = (data as dynamic)?.values,
+                    meta = (data as dynamic)?.meta
                 }
-            };
-
-            return Ok(CreateSuccessResponse(response));
+            });
         }
-        catch (Exception ex)
+        
+        if (result is NotFoundObjectResult notFound)
         {
-            return StatusCode(500, CreateErrorResponse($"Error reading multiple channel data: {ex.Message}"));
+            return NotFound(new { success = false, error = (notFound.Value as dynamic)?.error });
         }
+        
+        if (result is BadRequestObjectResult badRequest)
+        {
+            return BadRequest(new { success = false, error = (badRequest.Value as dynamic)?.error });
+        }
+        
+        return result;
     }
 
     #region Helper Methods
+
+    /// <summary>
+    /// Binary search for time index - matches JS exactly
+    /// </summary>
+    private int FindTimeIndex(float[] timeArray, float targetTime)
+    {
+        int left = 0;
+        int right = timeArray.Length - 1;
+        
+        while (left <= right)
+        {
+            int mid = (left + right) / 2;
+            if (timeArray[mid] < targetTime)
+            {
+                left = mid + 1;
+            }
+            else
+            {
+                right = mid - 1;
+            }
+        }
+        
+        return Math.Max(0, Math.Min(timeArray.Length - 1, left));
+    }
 
     /// <summary>
     /// Get the file path for the binary file
@@ -409,40 +390,6 @@ public class BinaryDataController : ControllerBase
             "A" => "y2",     // Secondary Y-axis for current  
             "Bar" => "y3",   // Tertiary Y-axis for pressure
             _ => "y"
-        };
-    }
-
-    /// <summary>
-    /// Create successful API response
-    /// </summary>
-    private ApiResponse<T> CreateSuccessResponse<T>(T data)
-    {
-        return new ApiResponse<T>
-        {
-            Success = true,
-            Data = data,
-            Metadata = new ApiMetadata
-            {
-                RequestId = HttpContext.TraceIdentifier,
-                Timestamp = DateTime.UtcNow
-            }
-        };
-    }
-
-    /// <summary>
-    /// Create error API response
-    /// </summary>
-    private ApiResponse<object> CreateErrorResponse(string message)
-    {
-        return new ApiResponse<object>
-        {
-            Success = false,
-            Error = message,
-            Metadata = new ApiMetadata
-            {
-                RequestId = HttpContext.TraceIdentifier,
-                Timestamp = DateTime.UtcNow
-            }
         };
     }
 

@@ -1,5 +1,6 @@
 using System.Data;
 using Dapper;
+using Microsoft.Data.Sqlite;
 using ExperimentAnalyzer.Database.Interfaces;
 using ExperimentAnalyzer.Models.Core;
 
@@ -7,29 +8,54 @@ namespace ExperimentAnalyzer.Database.Repositories;
 
 public class ExperimentRepository : IExperimentRepository
 {
-    private readonly IDbConnection _connection;
+    private readonly string _connectionString;
 
+    // Changed from IDbConnection to connection string to create new connections per operation
     public ExperimentRepository(IDbConnection connection)
     {
-        _connection = connection;
+        // Extract connection string from the injected connection
+        if (connection is SqliteConnection sqliteConnection)
+        {
+            _connectionString = sqliteConnection.ConnectionString;
+        }
+        else
+        {
+            throw new ArgumentException("Connection must be a SqliteConnection", nameof(connection));
+        }
+        
+        // Dispose the injected connection as we won't use it directly
+        connection?.Dispose();
+    }
+
+    /// <summary>
+    /// Create a new connection for each operation to avoid concurrency issues
+    /// </summary>
+    private IDbConnection CreateConnection()
+    {
+        var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        return connection;
     }
 
     public async Task<bool> ExperimentExistsAsync(string experimentId)
     {
-        const string sql = "SELECT COUNT(*) FROM experiments WHERE id = @ExperimentId";
-        var count = await _connection.QuerySingleAsync<int>(sql, new { ExperimentId = experimentId });
+        using var connection = CreateConnection();
+        const string sql = "SELECT COUNT(*) FROM experiments WHERE id = @ExperimentId LIMIT 1";
+        var count = await connection.QuerySingleAsync<int>(sql, new { ExperimentId = experimentId });
         return count > 0;
     }
 
     public async Task<bool> MetadataExistsAsync(string experimentId)
     {
-        const string sql = "SELECT COUNT(*) FROM experiment_metadata WHERE experiment_id = @ExperimentId";
-        var count = await _connection.QuerySingleAsync<int>(sql, new { ExperimentId = experimentId });
+        using var connection = CreateConnection();
+        const string sql = "SELECT COUNT(*) FROM experiment_metadata WHERE experiment_id = @ExperimentId LIMIT 1";
+        var count = await connection.QuerySingleAsync<int>(sql, new { ExperimentId = experimentId });
         return count > 0;
     }
 
     public async Task<Experiment?> GetExperimentAsync(string experimentId)
     {
+        using var connection = CreateConnection();
         const string sql = @"
             SELECT 
                 id as Id,
@@ -48,12 +74,15 @@ public class ExperimentRepository : IExperimentRepository
                 has_crown_measurements as HasCrownMeasurements,
                 has_ambient_temperature as HasAmbientTemperature
             FROM experiments 
-            WHERE id = @ExperimentId";
-        return await _connection.QuerySingleOrDefaultAsync<Experiment>(sql, new { ExperimentId = experimentId });
+            WHERE id = @ExperimentId
+            LIMIT 1";  // Added LIMIT 1 to ensure single result
+            
+        return await connection.QuerySingleOrDefaultAsync<Experiment>(sql, new { ExperimentId = experimentId });
     }
 
     public async Task<ExperimentWithMetadata?> GetExperimentWithMetadataAsync(string experimentId)
     {
+        using var connection = CreateConnection();
         const string sql = @"
             SELECT 
                 e.id as Id,
@@ -91,9 +120,10 @@ public class ExperimentRepository : IExperimentRepository
                 m.parsed_at as ParsedAt
             FROM experiments e
             LEFT JOIN experiment_metadata m ON e.id = m.experiment_id
-            WHERE e.id = @ExperimentId";
+            WHERE e.id = @ExperimentId
+            LIMIT 1";  // Added LIMIT 1
 
-        var result = await _connection.QueryAsync<Experiment, ExperimentMetadata?, ExperimentWithMetadata>(
+        var result = await connection.QueryAsync<Experiment, ExperimentMetadata?, ExperimentWithMetadata>(
             sql,
             (experiment, metadata) => new ExperimentWithMetadata 
             { 
@@ -108,6 +138,7 @@ public class ExperimentRepository : IExperimentRepository
 
     public async Task UpsertExperimentAsync(Experiment experiment)
     {
+        using var connection = CreateConnection();
         const string sql = @"
             INSERT OR REPLACE INTO experiments (
                 id, folder_path, experiment_date, created_at, updated_at,
@@ -121,7 +152,7 @@ public class ExperimentRepository : IExperimentRepository
                 @HasCrownMeasurements, @HasAmbientTemperature
             )";
 
-        await _connection.ExecuteAsync(sql, new
+        await connection.ExecuteAsync(sql, new
         {
             Id = experiment.Id,
             FolderPath = experiment.FolderPath,
@@ -143,6 +174,8 @@ public class ExperimentRepository : IExperimentRepository
 
     public async Task UpsertMetadataAsync(ExperimentMetadata metadata)
     {
+        using var connection = CreateConnection();
+        
         // Set defaults if missing
         if (string.IsNullOrEmpty(metadata.ProgramNumber))
             metadata.ProgramNumber = "60";
@@ -162,11 +195,12 @@ public class ExperimentRepository : IExperimentRepository
                 @GrindingType, @Grinder, @Comments, @Einlaufseite, @Auslaufseite, @ParsedAt
             )";
 
-        await _connection.ExecuteAsync(sql, metadata);
+        await connection.ExecuteAsync(sql, metadata);
     }
 
     public async Task<List<Experiment>> GetExperimentsWithJournalsAsync()
     {
+        using var connection = CreateConnection();
         const string sql = @"
             SELECT 
                 id as Id,
@@ -186,12 +220,14 @@ public class ExperimentRepository : IExperimentRepository
                 has_ambient_temperature as HasAmbientTemperature
             FROM experiments 
             WHERE has_weld_journal = 1";
-        var result = await _connection.QueryAsync<Experiment>(sql);
+            
+        var result = await connection.QueryAsync<Experiment>(sql);
         return result.ToList();
     }
 
     public async Task<List<ExperimentWithMetadata>> GetAllExperimentsWithMetadataAsync()
     {
+        using var connection = CreateConnection();
         const string sql = @"
             SELECT 
                 e.id as Id,
@@ -231,7 +267,7 @@ public class ExperimentRepository : IExperimentRepository
             LEFT JOIN experiment_metadata m ON e.id = m.experiment_id
             ORDER BY e.experiment_date DESC, e.id";
 
-        var result = await _connection.QueryAsync<Experiment, ExperimentMetadata?, ExperimentWithMetadata>(
+        var result = await connection.QueryAsync<Experiment, ExperimentMetadata?, ExperimentWithMetadata>(
             sql,
             (experiment, metadata) => new ExperimentWithMetadata 
             { 
@@ -249,6 +285,7 @@ public class ExperimentRepository : IExperimentRepository
         string sortBy = "date",
         string sortDirection = "desc")
     {
+        using var connection = CreateConnection();
         var sql = @"
             SELECT 
                 e.id as Id,
@@ -306,7 +343,7 @@ public class ExperimentRepository : IExperimentRepository
 
         var parameters = new { FilterValue = $"%{filterValue}%" };
 
-        var result = await _connection.QueryAsync<Experiment, ExperimentMetadata?, ExperimentWithMetadata>(
+        var result = await connection.QueryAsync<Experiment, ExperimentMetadata?, ExperimentWithMetadata>(
             sql,
             (experiment, metadata) => new ExperimentWithMetadata 
             { 
@@ -321,6 +358,8 @@ public class ExperimentRepository : IExperimentRepository
 
     public async Task InitializeDatabaseAsync()
     {
+        using var connection = CreateConnection();
+        
         // Read and execute schema files
         var baseDir = Directory.GetCurrentDirectory();
         var schemaPath = Path.Combine(baseDir, "Database", "Schema", "DatabaseSchema.sql");
@@ -329,20 +368,21 @@ public class ExperimentRepository : IExperimentRepository
         if (File.Exists(schemaPath))
         {
             var schema = await File.ReadAllTextAsync(schemaPath);
-            await _connection.ExecuteAsync(schema);
+            await connection.ExecuteAsync(schema);
         }
 
         if (File.Exists(indexPath))
         {
             var indexes = await File.ReadAllTextAsync(indexPath);
-            await _connection.ExecuteAsync(indexes);
+            await connection.ExecuteAsync(indexes);
         }
     }
 
     public async Task<int> GetExperimentCountAsync()
     {
+        using var connection = CreateConnection();
         const string sql = "SELECT COUNT(*) FROM experiments";
-        return await _connection.QuerySingleAsync<int>(sql);
+        return await connection.QuerySingleAsync<int>(sql);
     }
 
     private static string GetOrderClause(string sortBy, string sortDirection)

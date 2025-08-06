@@ -5,10 +5,16 @@ namespace ExperimentAnalyzer.Services.Data;
 
 /// <summary>
 /// Processes .bin files from welding experiments and converts ADC values to physical measurements
-/// Based on the original JavaScript BinaryReader with C# optimizations
+/// Updated to match JS BinaryReader.js behavior exactly with DataResampler integration
 /// </summary>
 public class BinaryDataProcessor
 {
+    private readonly DataResampler _resampler;
+    
+    // Store raw data in memory like JS version
+    private readonly Dictionary<string, RawChannelData> _rawDataCache = new();
+    private string? _currentFile = null;
+    
     // Voltage range lookup table (matches original system)
     private static readonly Dictionary<int, double> VoltageRanges = new()
     {
@@ -23,6 +29,11 @@ public class BinaryDataProcessor
         "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", 
         "#9467bd", "#8c564b", "#e377c2", "#7f7f7f"
     };
+    
+    public BinaryDataProcessor(DataResampler resampler)
+    {
+        _resampler = resampler;
+    }
 
     /// <summary>
     /// Binary file metadata extracted from header
@@ -43,32 +54,36 @@ public class BinaryDataProcessor
         public double Duration { get; set; }
         public double SamplingRate { get; set; }
     }
-
+    
     /// <summary>
-    /// Channel data with time and values
+    /// Raw channel data stored in memory (like JS version)
     /// </summary>
-    public class ChannelData
+    public class RawChannelData
     {
         public float[] Time { get; set; } = Array.Empty<float>();
         public float[] Values { get; set; } = Array.Empty<float>();
         public string Label { get; set; } = string.Empty;
         public string Unit { get; set; } = string.Empty;
-        public string Color { get; set; } = string.Empty;
-        public int DownsamplingFactor { get; set; }
-        public int ActualPoints { get; set; }
-        public double MinValue { get; set; }
-        public double MaxValue { get; set; }
+        public int Downsampling { get; set; }
+        public int Points { get; set; }
     }
 
     /// <summary>
-    /// Data range for axis scaling
+    /// Channel data response matching JS structure exactly
     /// </summary>
-    public class DataRange
+    public class ChannelDataResponse
     {
-        public double Min { get; set; }
-        public double Max { get; set; }
+        public float[] Time { get; set; } = Array.Empty<float>();
+        public float[] Values { get; set; } = Array.Empty<float>();
+        public string ChannelName { get; set; } = string.Empty;
         public string Unit { get; set; } = string.Empty;
-        public string Label { get; set; } = string.Empty;
+        public string Color { get; set; } = string.Empty;
+        public string YAxis { get; set; } = string.Empty;
+        public int ActualPoints { get; set; }
+        public double MinValue { get; set; }
+        public double MaxValue { get; set; }
+        public double SamplingRate { get; set; }
+        public Dictionary<string, object> Meta { get; set; } = new();
     }
 
     /// <summary>
@@ -144,108 +159,160 @@ public class BinaryDataProcessor
     }
 
     /// <summary>
-    /// Read channel data with time range filtering and resampling
+    /// Load all raw data into memory (like JS version does)
     /// </summary>
-    public async Task<ChannelData> ReadChannelDataAsync(string filePath, int channel, 
+    private async Task LoadRawDataIfNeeded(string filePath)
+    {
+        // Check if we already have this file loaded
+        if (_currentFile == filePath && _rawDataCache.Count > 0)
+        {
+            return; // Already loaded
+        }
+        
+        // Clear previous data
+        _rawDataCache.Clear();
+        _currentFile = filePath;
+        
+        var metadata = await ReadMetadataAsync(filePath);
+        
+        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
+        using var reader = new BinaryReader(stream);
+        
+        // Skip to data section
+        await SkipToDataSection(reader, metadata);
+        
+        // Pre-allocate arrays for each channel (like JS Float32Array)
+        var channelDataArrays = new float[8][];
+        var channelTimeArrays = new float[8][];
+        var channelIndices = new int[8];
+        
+        for (int channel = 0; channel < 8; channel++)
+        {
+            int points = (int)(metadata.BufferSize / metadata.DownsamplingFactors[channel]);
+            channelDataArrays[channel] = new float[points];
+            channelTimeArrays[channel] = new float[points];
+            channelIndices[channel] = 0;
+        }
+        
+        // Read all data like JS version
+        for (uint j = 0; j < metadata.BufferSize; j++)
+        {
+            for (int channel = 0; channel < 8; channel++)
+            {
+                if (j % metadata.DownsamplingFactors[channel] == 0)
+                {
+                    // Read ADC value
+                    var rawAdc = reader.ReadInt16();
+                    
+                    // Convert to physical value
+                    var physicalValue = ConvertAdcToPhysical(
+                        rawAdc,
+                        metadata.MaxAdcValue,
+                        metadata.ChannelRanges[channel],
+                        metadata.ChannelScaling[channel]
+                    );
+                    
+                    // Calculate time for this sample
+                    var dtSeconds = (metadata.SamplingInterval * metadata.DownsamplingFactors[channel]) / 1e9;
+                    var time = channelIndices[channel] * dtSeconds;
+                    
+                    // Store in arrays
+                    channelTimeArrays[channel][channelIndices[channel]] = (float)time;
+                    channelDataArrays[channel][channelIndices[channel]] = (float)physicalValue;
+                    channelIndices[channel]++;
+                }
+            }
+        }
+        
+        // Store in cache
+        for (int channel = 0; channel < 8; channel++)
+        {
+            var actualPoints = channelIndices[channel];
+            
+            // Trim arrays to actual size
+            var timeArray = new float[actualPoints];
+            var valueArray = new float[actualPoints];
+            Array.Copy(channelTimeArrays[channel], 0, timeArray, 0, actualPoints);
+            Array.Copy(channelDataArrays[channel], 0, valueArray, 0, actualPoints);
+            
+            _rawDataCache[$"channel_{channel}"] = new RawChannelData
+            {
+                Time = timeArray,
+                Values = valueArray,
+                Label = metadata.Labels[channel],
+                Unit = metadata.Units[channel],
+                Downsampling = metadata.DownsamplingFactors[channel],
+                Points = actualPoints
+            };
+        }
+    }
+
+    /// <summary>
+    /// Read channel data with time range filtering and resampling (using DataResampler)
+    /// This now matches JS behavior exactly
+    /// </summary>
+    public async Task<ChannelDataResponse> ReadChannelDataAsync(string filePath, int channel, 
         double startTime = 0, double endTime = double.MaxValue, int maxPoints = 2000)
     {
         if (channel < 0 || channel > 7)
             throw new ArgumentException("Channel must be between 0 and 7", nameof(channel));
 
+        // Load raw data if needed
+        await LoadRawDataIfNeeded(filePath);
+        
+        // Get raw channel data
+        var rawData = _rawDataCache[$"channel_{channel}"];
+        
+        // Get metadata for additional info
         var metadata = await ReadMetadataAsync(filePath);
         
-        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-        using var reader = new BinaryReader(stream);
-
-        // Skip to data section (after metadata)
-        await SkipToDataSection(reader, metadata);
-
-        // Calculate time parameters for this channel
-        var downsamplingFactor = metadata.DownsamplingFactors[channel];
-        var dtSeconds = (metadata.SamplingInterval * downsamplingFactor) / 1e9;
-        var totalPoints = (int)(metadata.BufferSize / downsamplingFactor);
-
-        // Calculate start/end indices based on time range
-        var startIndex = Math.Max(0, (int)(startTime / dtSeconds));
-        var endIndex = Math.Min(totalPoints - 1, (int)(endTime / dtSeconds));
-        
+        // Use actual end time if not specified
         if (endTime == double.MaxValue)
-            endIndex = totalPoints - 1;
-
-        var requestedPoints = endIndex - startIndex + 1;
-        
-        // Determine if we need to resample
-        var shouldResample = requestedPoints > maxPoints;
-        var step = shouldResample ? Math.Max(1, requestedPoints / maxPoints) : 1;
-        var actualPoints = (requestedPoints + step - 1) / step; // Ceiling division
-
-        var timeArray = new float[actualPoints];
-        var valueArray = new float[actualPoints];
-        
-        // Read and process data
-        var dataIndex = 0;
-        var outputIndex = 0;
-
-        for (int bufferIndex = 0; bufferIndex < metadata.BufferSize; bufferIndex++)
         {
-            for (int ch = 0; ch < 8; ch++)
-            {
-                if (bufferIndex % metadata.DownsamplingFactors[ch] == 0)
-                {
-                    var rawAdc = reader.ReadInt16();
-                    
-                    if (ch == channel)
-                    {
-                        // Check if this data point is in our time range and sampling step
-                        if (dataIndex >= startIndex && dataIndex <= endIndex && 
-                            (dataIndex - startIndex) % step == 0 && outputIndex < actualPoints)
-                        {
-                            // Convert ADC to physical value
-                            var physicalValue = ConvertAdcToPhysical(
-                                rawAdc,
-                                metadata.MaxAdcValue,
-                                metadata.ChannelRanges[channel],
-                                metadata.ChannelScaling[channel]
-                            );
-
-                            timeArray[outputIndex] = (float)(dataIndex * dtSeconds);
-                            valueArray[outputIndex] = (float)physicalValue;
-                            outputIndex++;
-                        }
-                        dataIndex++;
-                    }
-                }
-                else if (ch == channel)
-                {
-                    // Channel not sampled at this buffer index, but we need to skip the data
-                    // This shouldn't happen in our data format, but handle gracefully
-                }
-            }
+            endTime = rawData.Time.Length > 0 ? rawData.Time[rawData.Time.Length - 1] : metadata.Duration;
         }
-
-        // Trim arrays to actual size
-        if (outputIndex < actualPoints)
+        
+        // Use DataResampler to get resampled data (exact JS logic)
+        var resampledData = _resampler.GetResampledData(
+            rawData.Time,
+            rawData.Values,
+            startTime,
+            endTime,
+            maxPoints,
+            rawData.Downsampling,
+            metadata.SamplingInterval
+        );
+        
+        // Build response matching JS structure
+        return new ChannelDataResponse
         {
-            Array.Resize(ref timeArray, outputIndex);
-            Array.Resize(ref valueArray, outputIndex);
-        }
-
-        // Calculate min/max for range information
-        var minValue = valueArray.Length > 0 ? valueArray.Min() : 0;
-        var maxValue = valueArray.Length > 0 ? valueArray.Max() : 0;
-
-        return new ChannelData
-        {
-            Time = timeArray,
-            Values = valueArray,
-            Label = metadata.Labels[channel],
-            Unit = metadata.Units[channel],
+            Time = resampledData.Time,
+            Values = resampledData.Values,
+            ChannelName = rawData.Label,
+            Unit = rawData.Unit,
             Color = ChannelColors[channel],
-            DownsamplingFactor = downsamplingFactor,
-            ActualPoints = outputIndex,
-            MinValue = minValue,
-            MaxValue = maxValue
+            YAxis = GetYAxisForUnit(rawData.Unit),
+            ActualPoints = resampledData.ActualPoints,
+            MinValue = resampledData.MinValue,
+            MaxValue = resampledData.MaxValue,
+            SamplingRate = metadata.SamplingRate,
+            Meta = new Dictionary<string, object>
+            {
+                { "timeRange", new { start = startTime, end = endTime } },
+                { "actualPoints", resampledData.ActualPoints },
+                { "requestedMaxPoints", maxPoints },
+                { "downsampling", rawData.Downsampling }
+            }
         };
+    }
+
+    /// <summary>
+    /// Get raw channel data without resampling (for FFT, etc.)
+    /// </summary>
+    public async Task<RawChannelData> GetRawChannelDataAsync(string filePath, int channel)
+    {
+        await LoadRawDataIfNeeded(filePath);
+        return _rawDataCache[$"channel_{channel}"];
     }
 
     /// <summary>
@@ -253,65 +320,38 @@ public class BinaryDataProcessor
     /// </summary>
     public async Task<Dictionary<string, DataRange>> GetDataRangesAsync(string filePath)
     {
-        var metadata = await ReadMetadataAsync(filePath);
-        var ranges = new Dictionary<string, DataRange>();
-
-        using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read);
-        using var reader = new BinaryReader(stream);
-
-        await SkipToDataSection(reader, metadata);
-
-        // Track min/max for each channel
-        var channelMins = new double[8];
-        var channelMaxs = new double[8];
-        var channelHasData = new bool[8];
-
-        Array.Fill(channelMins, double.MaxValue);
-        Array.Fill(channelMaxs, double.MinValue);
-
-        // Read through all data to find ranges (sample every 100th point for performance)
-        var sampleStep = Math.Max(1, (int)(metadata.BufferSize / 10000)); // Sample ~10k points max
+        await LoadRawDataIfNeeded(filePath);
         
-        for (int bufferIndex = 0; bufferIndex < metadata.BufferSize; bufferIndex += sampleStep)
+        var ranges = new Dictionary<string, DataRange>();
+        
+        for (int channel = 0; channel < 8; channel++)
         {
-            for (int ch = 0; ch < 8; ch++)
+            var rawData = _rawDataCache[$"channel_{channel}"];
+            if (rawData.Values.Length == 0) continue;
+            
+            var (min, max) = _resampler.CalculateDataRange(rawData.Values);
+            
+            ranges[$"channel_{channel}"] = new DataRange
             {
-                if (bufferIndex % metadata.DownsamplingFactors[ch] == 0)
-                {
-                    var rawAdc = reader.ReadInt16();
-                    var physicalValue = ConvertAdcToPhysical(
-                        rawAdc,
-                        metadata.MaxAdcValue,
-                        metadata.ChannelRanges[ch],
-                        metadata.ChannelScaling[ch]
-                    );
-
-                    channelMins[ch] = Math.Min(channelMins[ch], physicalValue);
-                    channelMaxs[ch] = Math.Max(channelMaxs[ch], physicalValue);
-                    channelHasData[ch] = true;
-                }
-            }
+                Min = min,
+                Max = max,
+                Unit = rawData.Unit,
+                Label = rawData.Label
+            };
         }
-
-        // Create ranges with padding
-        for (int ch = 0; ch < 8; ch++)
-        {
-            if (channelHasData[ch])
-            {
-                var range = channelMaxs[ch] - channelMins[ch];
-                var padding = Math.Max(range * 0.05, 0.01); // 5% padding, minimum 0.01
-
-                ranges[$"channel_{ch}"] = new DataRange
-                {
-                    Min = channelMins[ch] - padding,
-                    Max = channelMaxs[ch] + padding,
-                    Unit = metadata.Units[ch],
-                    Label = metadata.Labels[ch]
-                };
-            }
-        }
-
+        
         return ranges;
+    }
+
+    /// <summary>
+    /// Data range for axis scaling
+    /// </summary>
+    public class DataRange
+    {
+        public double Min { get; set; }
+        public double Max { get; set; }
+        public string Unit { get; set; } = string.Empty;
+        public string Label { get; set; } = string.Empty;
     }
 
     /// <summary>
@@ -324,6 +364,20 @@ public class BinaryDataProcessor
         var millivolts = ((double)rawAdc / maxAdcValue) * voltageRange * 1000;
         var physicalValue = (channelScaling / 1000.0) * millivolts;
         return physicalValue;
+    }
+
+    /// <summary>
+    /// Get Y-axis assignment based on unit (matching JS exactly)
+    /// </summary>
+    private static string GetYAxisForUnit(string unit)
+    {
+        return unit switch
+        {
+            "V" => "y",      // Primary Y-axis for voltage
+            "A" => "y2",     // Secondary Y-axis for current  
+            "Bar" => "y3",   // Tertiary Y-axis for pressure
+            _ => "y"
+        };
     }
 
     /// <summary>

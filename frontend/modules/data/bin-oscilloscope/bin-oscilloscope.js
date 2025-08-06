@@ -1,7 +1,7 @@
 /**
  * Binary Oscilloscope Module
  * High-performance visualization of .bin file data with multi-axis support
- * Integrates with Experiment Analyzer module system
+ * FINAL VERSION: Exact copy of JS system behavior
  */
 
 class BinOscilloscope {
@@ -9,18 +9,19 @@ class BinOscilloscope {
         this.containerId = containerId;
         this.config = { ...this.getDefaultConfig(), ...config };
         
-        // State management
+        // State management - matching JS system exactly
         this.state = {
             isLoaded: false,
             isVisible: false,
+            isInitialized: false,
             currentExperiment: null,
             metadata: null,
             currentPlot: null,
             isLoading: false,
             error: null,
             
-            // Channel visibility (only channel 0 for testing)
-            visibleChannels: [0],
+            // Channel visibility - start with all channels visible
+            visibleChannels: [0, 1, 2, 3, 4, 5, 6, 7],
             
             // Current time range for zoom-responsive loading
             currentTimeRange: { start: 0, end: 100 },
@@ -29,21 +30,36 @@ class BinOscilloscope {
             cachedData: new Map(),
             
             // Plot interaction state
-            isZooming: false,
-            zoomTimeout: null
+            isHandlingZoom: false,
+            zoomTimeout: null,
+            
+            // Visibility state preservation (like JS)
+            currentVisibilityState: {},
+            
+            // Track if we have a plotly instance
+            plotlyInitialized: false,
+            
+            // UI revision for state preservation
+            uiRevision: 'bin-oscilloscope-ui-v1'
         };
         
         this.elements = {};
         
         console.log('BinOscilloscope initialized');
+        
+        // Initialize the module immediately after construction
+        this.init().catch(error => {
+            console.error('Failed to initialize BinOscilloscope:', error);
+        });
     }
     
     getDefaultConfig() {
         return {
             apiBaseUrl: '/api',
-            maxPointsDefault: 2000,
-            maxPointsZoomed: 5000,
-            zoomDebounceMs: 200,
+            // EXACT JS VALUES:
+            maxPointsDefault: 2000,      // Default points (JS default)
+            maxPointsZoomed: 3000,       // ALWAYS 3000 when zoomed (JS behavior)
+            zoomDebounceMs: 150,         // JS uses 150ms
             colors: [
                 '#1f77b4', '#ff7f0e', '#2ca02c', '#d62728',
                 '#9467bd', '#8c564b', '#e377c2', '#7f7f7f'
@@ -52,21 +68,38 @@ class BinOscilloscope {
     }
     
     /**
-     * Initialize the module (called by app.js)
+     * Initialize the module
      */
     async init() {
+        if (this.state.isInitialized) {
+            console.log('BinOscilloscope already initialized');
+            return;
+        }
+        
         try {
             await this.loadTemplate();
             this.render();
+            // Wait a bit for DOM to settle
+            await new Promise(resolve => setTimeout(resolve, 100));
             this.bindElements();
             this.attachEvents();
             this.show();
             
+            this.state.isInitialized = true;
             console.log('BinOscilloscope module initialized successfully');
             
         } catch (error) {
             console.error('BinOscilloscope initialization failed:', error);
             this.onError(error);
+        }
+    }
+    
+    /**
+     * Ensure module is initialized before performing operations
+     */
+    async ensureInitialized() {
+        if (!this.state.isInitialized) {
+            await this.init();
         }
     }
     
@@ -89,7 +122,7 @@ class BinOscilloscope {
     }
     
     /**
-     * Render template to container - FIXED VERSION
+     * Render template to container
      */
     render() {
         const container = document.getElementById(this.containerId);
@@ -101,10 +134,8 @@ class BinOscilloscope {
             throw new Error('Template not loaded');
         }
         
-        console.log('🎨 Rendering template to container:', this.containerId);
+        console.log('Rendering template to container:', this.containerId);
         container.innerHTML = this.template;
-        console.log('✅ Template rendered successfully');
-        // DON'T call bindElements() here - let init() handle it
     }
     
     /**
@@ -112,9 +143,13 @@ class BinOscilloscope {
      */
     bindElements() {
         const container = document.getElementById(this.containerId);
-        if (!container) return;
+        if (!container) {
+            console.error('Container not found for binding:', this.containerId);
+            return;
+        }
         
         const bindableElements = container.querySelectorAll('[data-bind]');
+        
         bindableElements.forEach(el => {
             const bindName = el.dataset.bind;
             this.elements[bindName] = el;
@@ -133,7 +168,7 @@ class BinOscilloscope {
      * Attach event listeners
      */
     attachEvents() {
-        // Channel visibility checkboxes (will be created dynamically)
+        // Channel visibility checkboxes
         if (this.elements.channelControls) {
             this.elements.channelControls.addEventListener('change', this.handleChannelToggle.bind(this));
         }
@@ -148,25 +183,32 @@ class BinOscilloscope {
             this.elements.resetYAxesBtn.addEventListener('click', this.resetYAxes.bind(this));
         }
         
-        // Toggle all channels button
-        if (this.elements.toggleAllBtn) {
-            this.elements.toggleAllBtn.addEventListener('click', this.toggleAllChannels.bind(this));
+        // Retry button
+        if (this.elements.retryBtn) {
+            this.elements.retryBtn.addEventListener('click', () => {
+                this.hideError();
+                if (this.state.currentExperiment) {
+                    this.loadExperiment(this.state.currentExperiment);
+                }
+            });
         }
     }
     
     /**
-     * Load experiment data (main entry point called by app orchestrator)
+     * Load experiment data (main entry point)
      */
     async loadExperiment(experimentId) {
         try {
+            await this.ensureInitialized();
+            
             console.log(`Loading binary data for experiment: ${experimentId}`);
             
             this.state.currentExperiment = experimentId;
             this.state.isLoading = true;
             this.showLoading();
             
-            // Clear previous data
-            this.state.cachedData.clear();
+            // Clear previous data and plot
+            this.clearPreviousData();
             
             // Load metadata first
             await this.loadMetadata();
@@ -174,8 +216,8 @@ class BinOscilloscope {
             // Create channel controls
             this.createChannelControls();
             
-            // Load initial plot data
-            await this.loadInitialPlotData();
+            // Build initial traces and create plot
+            await this.createInitialPlot();
             
             // Update state
             this.state.isLoaded = true;
@@ -196,22 +238,53 @@ class BinOscilloscope {
     }
     
     /**
-     * Load experiment metadata
+     * Clear previous data and plot
+     */
+    clearPreviousData() {
+        // Clear cache
+        this.state.cachedData.clear();
+        
+        // Clear plot if exists
+        if (this.state.plotlyInitialized && this.elements.plotContainer) {
+            try {
+                Plotly.purge(this.elements.plotContainer);
+                this.state.plotlyInitialized = false;
+            } catch (error) {
+                console.warn('Error purging previous plot:', error);
+            }
+        }
+        
+        // Reset state
+        this.state.currentVisibilityState = {};
+        this.state.isHandlingZoom = false;
+        if (this.state.zoomTimeout) {
+            clearTimeout(this.state.zoomTimeout);
+            this.state.zoomTimeout = null;
+        }
+    }
+    
+    /**
+     * Load experiment metadata - using NEW JS-compatible endpoint
      */
     async loadMetadata() {
-        const response = await fetch(`${this.config.apiBaseUrl}/experiments/${this.state.currentExperiment}/binary/metadata`);
+        // Use NEW JS-compatible endpoint format
+        const response = await fetch(`${this.config.apiBaseUrl}/experiment/${this.state.currentExperiment}/metadata`);
         
         if (!response.ok) {
             throw new Error(`Failed to load metadata: ${response.status} ${response.statusText}`);
         }
         
-        const result = await response.json();
-        if (!result.success) {
-            throw new Error(result.error || 'Metadata request failed');
-        }
+        const metadata = await response.json();
         
-        this.state.metadata = result.data;
-        this.state.currentTimeRange = { start: 0, end: this.state.metadata.duration };
+        // Transform to our internal format
+        this.state.metadata = {
+            channels: metadata.channels,
+            duration: metadata.duration,
+            samplingRate: metadata.samplingRate,
+            totalPoints: metadata.totalPoints
+        };
+        
+        this.state.currentTimeRange = { start: 0, end: metadata.duration };
         
         console.log('Metadata loaded:', this.state.metadata);
     }
@@ -228,7 +301,7 @@ class BinOscilloscope {
                 <input type="checkbox" 
                        data-channel="${ch.index}" 
                        ${this.state.visibleChannels.includes(ch.index) ? 'checked' : ''}>
-                <span class="channel-indicator" style="background-color: ${ch.color}"></span>
+                <span class="channel-indicator" style="background-color: ${this.config.colors[ch.index]}"></span>
                 <span class="channel-label">${ch.label}</span>
                 <span class="channel-unit">[${ch.unit}]</span>
             </label>
@@ -252,255 +325,265 @@ class BinOscilloscope {
     }
     
     /**
-     * Load initial plot data and create plot
+     * Create initial plot with all traces
      */
-    async loadInitialPlotData() {
-        // Load data for all visible channels
-        const channelDataPromises = this.state.visibleChannels.map(channel => 
-            this.loadChannelData(channel, this.state.currentTimeRange.start, this.state.currentTimeRange.end)
-        );
+    async createInitialPlot() {
+        const startTime = 0;
+        const endTime = this.state.metadata.duration;
         
-        const channelDataArray = await Promise.all(channelDataPromises);
-        
-        // Create plot traces
-        const traces = channelDataArray.map(data => ({
-            x: Array.from(data.time),
-            y: Array.from(data.values),
-            type: 'scatter',
-            mode: 'lines',
-            name: `${data.channelName} [${data.unit}]`,
-            line: { color: data.color, width: 1.5 },
-            yaxis: data.yAxis,
-            visible: true,
-            legendgroup: 'binary'
-        }));
+        // Build all traces with default points (2000)
+        const result = await this.buildAllTraces(startTime, endTime, this.config.maxPointsDefault);
         
         // Create plot layout
         const layout = this.createPlotLayout();
         
         // Create the plot
-        await this.createPlot(traces, layout);
+        await this.createPlot(result.traces, layout);
         
-        console.log(`Initial plot created with ${traces.length} traces`);
+        // Capture initial visibility state
+        this.captureCurrentVisibility();
+        
+        console.log(`Initial plot created with ${result.traces.length} traces`);
     }
     
     /**
-     * Load data for a specific channel - DEBUG VERSION
+     * Build all traces for current visible channels - EXACT JS COPY
      */
-    async loadChannelData(channel, startTime, endTime, maxPoints = null) {
-        const cacheKey = `${channel}_${startTime}_${endTime}_${maxPoints || this.config.maxPointsDefault}`;
+    async buildAllTraces(startTime, endTime, maxPoints) {
+        const traces = [];
         
-        console.log(`🔍 Loading channel ${channel} data (${startTime}s - ${endTime}s, ${maxPoints || this.config.maxPointsDefault} points)...`);
+        // Load data for all visible channels in parallel
+        const channelPromises = this.state.visibleChannels.map(async channel => {
+            try {
+                const data = await this.loadChannelData(channel, startTime, endTime, maxPoints);
+                const ch = this.state.metadata.channels[channel];
+                
+                return {
+                    x: data.time,
+                    y: data.values,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: `${ch.label} [${ch.unit}]`,
+                    line: { color: this.config.colors[channel], width: 1.5 },
+                    yaxis: this.getYAxisForUnit(ch.unit),
+                    visible: true,
+                    legendgroup: 'binary',
+                    showlegend: true
+                };
+            } catch (error) {
+                console.warn(`Failed to load channel ${channel}:`, error.message);
+                return null;
+            }
+        });
+        
+        const results = await Promise.all(channelPromises);
+        
+        // Add successful traces
+        results.forEach(trace => {
+            if (trace) {
+                traces.push(trace);
+            }
+        });
+        
+        return { 
+            traces, 
+            totalPoints: traces.reduce((sum, t) => sum + (t.x?.length || 0), 0)
+        };
+    }
+    
+    /**
+     * Load data for a specific channel - using NEW JS-compatible endpoint
+     */
+    async loadChannelData(channel, startTime, endTime, maxPoints) {
+        // Build cache key
+        const cacheKey = `${channel}_${startTime}_${endTime}_${maxPoints}`;
         
         // Check cache first
         if (this.state.cachedData.has(cacheKey)) {
-            console.log(`🎯 Cache hit for channel ${channel}`);
             return this.state.cachedData.get(cacheKey);
         }
         
+        // Use NEW JS-compatible endpoint and parameters
         const params = new URLSearchParams({
-            startTime: startTime.toString(),
-            endTime: endTime.toString(),
-            maxPoints: (maxPoints || this.config.maxPointsDefault).toString()
+            start: startTime.toString(),     // Changed from startTime
+            end: endTime.toString(),          // Changed from endTime  
+            maxPoints: maxPoints.toString()
         });
         
-        console.log(`📡 Fetching channel ${channel} data from API...`);
-        console.log(`🌐 URL: ${this.config.apiBaseUrl}/experiments/${this.state.currentExperiment}/binary/data/${channel}?${params}`);
-        
         try {
+            // Use NEW endpoint format
             const response = await fetch(
-                `${this.config.apiBaseUrl}/experiments/${this.state.currentExperiment}/binary/data/${channel}?${params}`
+                `${this.config.apiBaseUrl}/experiment/${this.state.currentExperiment}/data/${channel}?${params}`
             );
             
-            console.log(`📡 Response for channel ${channel}:`, {
-                status: response.status,
-                statusText: response.statusText,
-                ok: response.ok,
-                headers: Object.fromEntries(response.headers.entries())
-            });
-            
             if (!response.ok) {
-                console.error(`❌ Response not OK for channel ${channel}:`, response.status, response.statusText);
-                throw new Error(`Failed to load channel ${channel} data: ${response.status}`);
+                throw new Error(`Failed to load channel ${channel}: ${response.status}`);
             }
             
-            console.log(`🔄 Starting JSON parsing for channel ${channel}...`);
-            const result = await response.json();
-            console.log(`✅ JSON parsed successfully for channel ${channel}. Success:`, result.success);
-            
-            if (!result.success) {
-                console.error(`❌ API returned unsuccessful for channel ${channel}:`, result.error);
-                throw new Error(result.error || `Channel ${channel} data request failed`);
-            }
-            
-            console.log(`💾 Caching data for channel ${channel} (${result.data.actualPoints || result.data.values?.length} points)`);
+            const data = await response.json();
             
             // Cache the result
-            this.state.cachedData.set(cacheKey, result.data);
+            this.state.cachedData.set(cacheKey, data);
             
-            console.log(`🎉 Successfully loaded channel ${channel} data`);
-            return result.data;
+            // Limit cache size
+            if (this.state.cachedData.size > 50) {
+                const firstKey = this.state.cachedData.keys().next().value;
+                this.state.cachedData.delete(firstKey);
+            }
+            
+            return data;
             
         } catch (error) {
-            console.error(`💥 Error loading channel ${channel} data:`, error);
-            console.error(`💥 Error details:`, {
-                name: error.name,
-                message: error.message,
-                stack: error.stack
-            });
+            console.error(`Error loading channel ${channel}:`, error);
             throw error;
         }
     }
     
     /**
-     * Create Plotly layout with multi-axis support
+     * Create Plotly layout - EXACT JS COPY
      */
     createPlotLayout() {
-        const metadata = this.state.metadata;
-        
         return {
             title: {
-                text: `Binary Data - ${this.state.currentExperiment}`,
+                text: `${this.state.currentExperiment} - Multi-Channel Data`,
                 font: { size: 16, color: '#2c3e50' }
             },
             
-            // X-axis (time)
+            // IMPORTANT: uirevision for state preservation (JS system)
+            uirevision: this.state.uiRevision,
+            
+            // X-axis (time) - EXACT JS domain
             xaxis: {
                 title: 'Time [s]',
                 range: [this.state.currentTimeRange.start, this.state.currentTimeRange.end],
+                domain: [0.26, 0.94],  // EXACT JS values
                 showgrid: true,
                 gridcolor: 'rgba(0,0,0,0.1)',
-                domain: [0.15, 0.85] // Leave space for Y-axes
+                automargin: true
             },
             
-            // Voltage axis (left side)
+            // Voltage axis (left side - y)
             yaxis: {
-                title: { text: 'Voltage [V]', font: { color: '#1f77b4' } },
+                title: { 
+                    text: 'Voltage [V]', 
+                    font: { color: this.config.colors[0], size: 14, family: 'Arial Black' },
+                    standoff: 12
+                },
+                tickfont: { color: this.config.colors[0], size: 12 },
                 side: 'left',
                 position: 0.0,
                 showgrid: true,
                 gridcolor: 'rgba(31, 119, 180, 0.2)',
+                gridwidth: 1,
                 zeroline: true,
                 zerolinecolor: 'rgba(31, 119, 180, 0.7)',
-                tickfont: { color: '#1f77b4' },
-                linecolor: '#1f77b4'
+                zerolinewidth: 2,
+                automargin: true,
+                linecolor: this.config.colors[0],
+                linewidth: 3,
+                showline: true
             },
             
-            // Current axis (second from left)
+            // Current axis (second from left - y2)
             yaxis2: {
-                title: { text: 'Current [A]', font: { color: '#ff7f0e' } },
+                title: { 
+                    text: 'Current [A]', 
+                    font: { color: this.config.colors[2], size: 14, family: 'Arial Black' },
+                    standoff: 12
+                },
+                tickfont: { color: this.config.colors[2], size: 12 },
                 side: 'left',
                 position: 0.08,
                 overlaying: 'y',
                 anchor: 'free',
                 showgrid: false,
                 zeroline: true,
-                zerolinecolor: 'rgba(255, 127, 14, 0.7)',
-                tickfont: { color: '#ff7f0e' },
-                linecolor: '#ff7f0e'
+                zerolinecolor: 'rgba(44, 160, 44, 0.7)',
+                zerolinewidth: 2,
+                automargin: true,
+                linecolor: this.config.colors[2],
+                linewidth: 3,
+                showline: true
             },
             
-            // Pressure axis (third from left) 
+            // Pressure axis (third from left - y3)
             yaxis3: {
-                title: { text: 'Pressure [Bar]', font: { color: '#2ca02c' } },
+                title: { 
+                    text: 'Pressure [Bar]', 
+                    font: { color: this.config.colors[6], size: 14, family: 'Arial Black' },
+                    standoff: 12
+                },
+                tickfont: { color: this.config.colors[6], size: 12 },
                 side: 'left',
                 position: 0.16,
                 overlaying: 'y',
                 anchor: 'free',
                 showgrid: false,
-                zeroline: true,
-                zerolinecolor: 'rgba(44, 160, 44, 0.7)',
-                tickfont: { color: '#2ca02c' },
-                linecolor: '#2ca02c'
+                zeroline: false,
+                automargin: true,
+                linecolor: this.config.colors[6],
+                linewidth: 3,
+                showline: true
             },
             
-            // Plot styling
-            height: 500,
-            margin: { l: 120, r: 50, t: 80, b: 60 },
-            plot_bgcolor: 'rgba(248,249,250,0.3)',
-            paper_bgcolor: 'rgba(0,0,0,0)',
-            
-            // Legend
+            // Legend - EXACT JS settings
             legend: {
                 x: 1.02,
                 y: 1,
                 bgcolor: 'rgba(255,255,255,0.95)',
                 bordercolor: 'rgba(0,0,0,0.3)',
-                borderwidth: 1
+                borderwidth: 1,
+                groupclick: 'toggleitem',
+                uirevision: this.state.uiRevision
             },
             
-            // Enable zoom preservation
-            uirevision: 'bin-oscilloscope-ui'
+            height: 600,
+            margin: { 
+                l: 120,  // Adjusted for multiple Y-axes
+                r: 50, 
+                t: 80, 
+                b: 60 
+            },
+            plot_bgcolor: 'rgba(248,249,250,0.3)',
+            paper_bgcolor: 'rgba(0,0,0,0)',
+            autosize: true
         };
     }
     
     /**
-     * Create Plotly plot with event handlers - FIXED VERSION
+     * Create Plotly plot with event handlers
      */
     async createPlot(traces, layout) {
-        console.log('🎨 Creating plot with', traces.length, 'traces...');
-        
-        // Wait for DOM element to be ready
-        let plotContainer = this.elements.plotContainer;
-        let retryCount = 0;
-        const maxRetries = 10;
-        
-        // Retry logic to wait for DOM element
-        while (!plotContainer && retryCount < maxRetries) {
-            console.log(`⏳ Plot container not found, retry ${retryCount + 1}/${maxRetries}...`);
-            
-            // Re-bind elements in case they weren't ready before
-            this.bindElements();
-            plotContainer = this.elements.plotContainer;
-            
-            if (!plotContainer) {
-                // Wait a bit and try again
-                await new Promise(resolve => setTimeout(resolve, 100));
-                retryCount++;
-            }
+        if (!this.elements.plotContainer) {
+            throw new Error('Plot container element not found');
         }
-        
-        if (!plotContainer) {
-            console.error('💥 Plot container still not found after retries');
-            console.error('💥 Available elements:', Object.keys(this.elements));
-            console.error('💥 Container ID:', this.containerId);
-            
-            // Check if the container exists in DOM
-            const containerElement = document.getElementById(this.containerId);
-            console.error('💥 Container element exists:', !!containerElement);
-            
-            if (containerElement) {
-                console.error('💥 Container innerHTML:', containerElement.innerHTML.slice(0, 200) + '...');
-            }
-            
-            throw new Error('Plot container not found after multiple retries');
-        }
-        
-        console.log('✅ Plot container found, creating Plotly plot...');
         
         const config = {
             responsive: true,
             displayModeBar: true,
-            scrollZoom: false
+            scrollZoom: false,
+            modeBarButtonsToAdd: ['pan2d', 'select2d', 'lasso2d'],
+            displaylogo: false
         };
         
         try {
-            // Create plot
-            this.state.currentPlot = await Plotly.newPlot(plotContainer, traces, layout, config);
+            await Plotly.newPlot(this.elements.plotContainer, traces, layout, config);
+            this.state.plotlyInitialized = true;
+            this.state.currentPlot = this.elements.plotContainer;
             
             // Setup event listeners
             this.setupPlotEventListeners();
             
-            console.log('🎉 Plotly plot created successfully');
+            console.log('Plotly plot created successfully');
             
         } catch (error) {
-            console.error('💥 Error creating Plotly plot:', error);
+            console.error('Error creating Plotly plot:', error);
             throw error;
         }
     }
     
     /**
-     * Setup plot event listeners for zoom-responsive loading
+     * Setup plot event listeners - EXACT JS COPY
      */
     setupPlotEventListeners() {
         const plotContainer = this.elements.plotContainer;
@@ -508,77 +591,199 @@ class BinOscilloscope {
         
         // Remove existing listeners
         plotContainer.removeAllListeners?.('plotly_relayout');
+        plotContainer.removeAllListeners?.('plotly_restyle');
         
-        // Add zoom/pan handler with debouncing
+        // Add zoom/pan handler
         plotContainer.on('plotly_relayout', this.handleZoomEvent.bind(this));
+        
+        // Add visibility change handler
+        plotContainer.on('plotly_restyle', this.handleVisibilityEvent.bind(this));
+        
+        // Add Y-axis scroll zoom (JS feature)
+        this.setupYAxisScrollZoom();
         
         console.log('Plot event listeners setup complete');
     }
     
     /**
-     * Handle zoom/pan events with debounced data reloading
+     * Handle zoom/pan events - EXACT JS COPY
      */
     async handleZoomEvent(eventData) {
         // Check if this is a zoom event
         if (!eventData['xaxis.range[0]'] && !eventData['xaxis.range[1]']) return;
-        if (this.state.isZooming) return;
+        if (this.state.isHandlingZoom) return;
+        if (!this.state.currentExperiment) return;
         
-        const newStart = eventData['xaxis.range[0]'] || this.state.currentTimeRange.start;
-        const newEnd = eventData['xaxis.range[1]'] || this.state.currentTimeRange.end;
+        const startTime = eventData['xaxis.range[0]'] || 0;
+        const endTime = eventData['xaxis.range[1]'] || this.state.metadata.duration;
         
         // Update current time range
-        this.state.currentTimeRange = { start: newStart, end: newEnd };
+        this.state.currentTimeRange = { start: startTime, end: endTime };
         
-        // Clear existing timeout
+        // Debounce rapid zoom events (150ms like JS)
         if (this.state.zoomTimeout) {
             clearTimeout(this.state.zoomTimeout);
         }
         
-        // Debounce the data reload
         this.state.zoomTimeout = setTimeout(async () => {
-            await this.reloadDataForZoom(newStart, newEnd);
+            await this.performZoomResample(startTime, endTime);
         }, this.config.zoomDebounceMs);
     }
     
     /**
-     * Reload data for new zoom level
+     * Perform zoom resampling - EXACT JS COPY
      */
-    async reloadDataForZoom(startTime, endTime) {
-        if (this.state.isZooming) return;
+    async performZoomResample(startTime, endTime) {
+        if (this.state.isHandlingZoom) return;
         
         try {
-            this.state.isZooming = true;
+            this.state.isHandlingZoom = true;
             
-            console.log(`Reloading data for zoom: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
+            // IMPORTANT: Capture current visibility state before rebuilding
+            const savedVisibilityState = this.captureCurrentVisibility();
             
-            // Load higher resolution data for zoomed view
-            const channelDataPromises = this.state.visibleChannels.map(channel =>
-                this.loadChannelData(channel, startTime, endTime, this.config.maxPointsZoomed)
-            );
+            console.log(`Resampling data for zoom: ${startTime.toFixed(2)}s - ${endTime.toFixed(2)}s`);
             
-            const channelDataArray = await Promise.all(channelDataPromises);
+            // Build new traces with FIXED 3000 points (EXACT JS behavior)
+            const result = await this.buildAllTraces(startTime, endTime, 3000);
             
-            // Update plot with new data
-            const updateData = {
-                x: channelDataArray.map(data => Array.from(data.time)),
-                y: channelDataArray.map(data => Array.from(data.values))
-            };
+            // IMPORTANT: Restore visibility state to new traces
+            this.restoreVisibilityState(result.traces, savedVisibilityState);
             
-            const traceIndices = this.state.visibleChannels.map((_, index) => index);
-            
-            await Plotly.restyle(this.elements.plotContainer, updateData, traceIndices);
+            // Update plot with Plotly.react (JS uses react, not restyle)
+            await Plotly.react(this.state.currentPlot, result.traces, this.state.currentPlot.layout);
             
             this.updateStatusInfo();
             
         } catch (error) {
-            console.error('Error reloading data for zoom:', error);
+            console.error('Error during zoom resampling:', error);
         } finally {
-            this.state.isZooming = false;
+            this.state.isHandlingZoom = false;
         }
     }
     
     /**
-     * Handle channel visibility toggle
+     * Setup Y-axis scroll zoom - JS FEATURE
+     */
+    setupYAxisScrollZoom() {
+        const plotContainer = this.elements.plotContainer;
+        if (!plotContainer) return;
+        
+        // Remove existing listeners
+        plotContainer.removeEventListener('wheel', this.handleWheelZoom);
+        
+        // Add new listener with bound context
+        this.handleWheelZoom = this.handleWheelZoom.bind(this);
+        plotContainer.addEventListener('wheel', this.handleWheelZoom, { passive: false });
+    }
+    
+    /**
+     * Handle wheel zoom on Y-axes - EXACT JS COPY
+     */
+    handleWheelZoom(e) {
+        // Find the plot area
+        const plotArea = e.target.closest('.plot-container');
+        if (!plotArea) return;
+        
+        const rect = plotArea.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const width = rect.width;
+        
+        // Calculate which axis zone we're in
+        const zones = this.calculateAxisZones(width);
+        const targetAxis = this.determineTargetAxis(x, zones);
+        
+        if (targetAxis && this.state.currentPlot?.layout?.[targetAxis.id]) {
+            e.preventDefault();
+            
+            const currentRange = this.state.currentPlot.layout[targetAxis.id].range || 
+                                this.state.currentPlot.layout[targetAxis.id].autorange;
+            
+            if (currentRange && currentRange !== true) {
+                const center = (currentRange[1] + currentRange[0]) / 2;
+                const span = currentRange[1] - currentRange[0];
+                const zoomFactor = e.deltaY > 0 ? 1.25 : 0.8;
+                const newSpan = span * zoomFactor;
+                const newRange = [center - newSpan/2, center + newSpan/2];
+                
+                const update = {};
+                update[targetAxis.id + '.range'] = newRange;
+                Plotly.relayout(this.state.currentPlot, update);
+            }
+        }
+    }
+    
+    /**
+     * Calculate axis zones - EXACT JS COPY
+     */
+    calculateAxisZones(plotWidth) {
+        return {
+            voltage: { start: plotWidth * 0.10, end: plotWidth * 0.15, id: 'yaxis', name: 'Voltage' },
+            current: { start: plotWidth * 0.15, end: plotWidth * 0.20, id: 'yaxis2', name: 'Current' },
+            pressure: { start: plotWidth * 0.20, end: plotWidth * 0.25, id: 'yaxis3', name: 'Pressure' }
+        };
+    }
+    
+    /**
+     * Determine target axis from mouse position
+     */
+    determineTargetAxis(mouseX, zones) {
+        for (const [key, zone] of Object.entries(zones)) {
+            if (zone && mouseX >= zone.start && mouseX < zone.end) {
+                return zone;
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * Capture current visibility state - EXACT JS COPY
+     */
+    captureCurrentVisibility() {
+        const visibilityState = {};
+        
+        if (this.state.currentPlot?.data) {
+            this.state.currentPlot.data.forEach((trace, index) => {
+                if (trace.name) {
+                    visibilityState[trace.name] = trace.visible !== false && trace.visible !== 'legendonly';
+                }
+            });
+        }
+        
+        this.state.currentVisibilityState = visibilityState;
+        return visibilityState;
+    }
+    
+    /**
+     * Restore visibility state - EXACT JS COPY
+     */
+    restoreVisibilityState(traces, savedVisibilityState) {
+        if (!savedVisibilityState || Object.keys(savedVisibilityState).length === 0) {
+            return;
+        }
+        
+        traces.forEach(trace => {
+            if (trace.name && savedVisibilityState.hasOwnProperty(trace.name)) {
+                const wasVisible = savedVisibilityState[trace.name];
+                trace.visible = wasVisible ? true : 'legendonly';
+            }
+        });
+    }
+    
+    /**
+     * Handle visibility changes from legend
+     */
+    handleVisibilityEvent(eventData) {
+        if (eventData && eventData[0] && eventData[0].hasOwnProperty('visible')) {
+            // Update visibility state after a delay
+            setTimeout(() => {
+                this.captureCurrentVisibility();
+            }, 100);
+        }
+    }
+    
+    /**
+     * Handle channel toggle from controls
      */
     async handleChannelToggle(event) {
         if (event.target.type !== 'checkbox') return;
@@ -597,22 +802,17 @@ class BinOscilloscope {
             }
         }
         
-        // Reload plot with new channel selection
         await this.reloadPlotWithChannels();
     }
     
     /**
-     * Toggle all channels on/off
+     * Toggle all channels
      */
     async toggleAllChannels() {
-        const allChannels = [0, 1, 2, 3, 4, 5, 6, 7];
-        
         if (this.state.visibleChannels.length === 8) {
-            // All visible, turn all off
             this.state.visibleChannels = [];
         } else {
-            // Some or none visible, turn all on
-            this.state.visibleChannels = [...allChannels];
+            this.state.visibleChannels = [0, 1, 2, 3, 4, 5, 6, 7];
         }
         
         // Update checkboxes
@@ -622,7 +822,6 @@ class BinOscilloscope {
             cb.checked = this.state.visibleChannels.includes(channel);
         });
         
-        // Reload plot
         await this.reloadPlotWithChannels();
     }
     
@@ -630,18 +829,41 @@ class BinOscilloscope {
      * Reload plot with current channel selection
      */
     async reloadPlotWithChannels() {
-        if (!this.state.isLoaded || this.state.visibleChannels.length === 0) {
-            // Clear plot if no channels visible
-            if (this.state.currentPlot) {
+        if (!this.state.isLoaded) return;
+        
+        if (this.state.visibleChannels.length === 0) {
+            if (this.state.plotlyInitialized) {
                 await Plotly.purge(this.elements.plotContainer);
-                this.state.currentPlot = null;
+                this.state.plotlyInitialized = false;
             }
             return;
         }
         
         try {
-            // Load data for visible channels
-            await this.loadInitialPlotData();
+            this.showLoading();
+            
+            const startTime = this.state.currentTimeRange.start;
+            const endTime = this.state.currentTimeRange.end;
+            
+            // Determine points based on zoom (like performZoomResample)
+            const zoomRange = endTime - startTime;
+            const fullRange = this.state.metadata.duration;
+            const isZoomed = zoomRange < fullRange * 0.9;
+            
+            // Use 3000 points if zoomed, otherwise default
+            const maxPoints = isZoomed ? 3000 : this.config.maxPointsDefault;
+            
+            const result = await this.buildAllTraces(startTime, endTime, maxPoints);
+            
+            if (this.state.plotlyInitialized) {
+                await Plotly.react(this.state.currentPlot, result.traces, this.state.currentPlot.layout);
+            } else {
+                const layout = this.createPlotLayout();
+                await this.createPlot(result.traces, layout);
+            }
+            
+            this.hideLoading();
+            this.updateStatusInfo();
             
         } catch (error) {
             console.error('Error reloading plot:', error);
@@ -650,31 +872,46 @@ class BinOscilloscope {
     }
     
     /**
-     * Reset zoom to full view
+     * Reset zoom to full view - EXACT JS COPY
      */
     resetZoom() {
-        if (!this.state.metadata || !this.state.currentPlot) return;
+        if (!this.state.metadata || !this.state.plotlyInitialized) return;
         
         const update = {
             'xaxis.range': [0, this.state.metadata.duration]
         };
         
-        Plotly.relayout(this.elements.plotContainer, update);
+        Plotly.relayout(this.state.currentPlot, update);
+        
+        // Update tracked range
+        this.state.currentTimeRange = { start: 0, end: this.state.metadata.duration };
     }
     
     /**
      * Reset Y-axes to auto-range
      */
     resetYAxes() {
-        if (!this.state.currentPlot) return;
+        if (!this.state.plotlyInitialized) return;
         
         const update = {
-            'yaxis.range': null,
-            'yaxis2.range': null,
-            'yaxis3.range': null
+            'yaxis.autorange': true,
+            'yaxis2.autorange': true,
+            'yaxis3.autorange': true
         };
         
-        Plotly.relayout(this.elements.plotContainer, update);
+        Plotly.relayout(this.state.currentPlot, update);
+    }
+    
+    /**
+     * Get Y-axis for unit - matching JS
+     */
+    getYAxisForUnit(unit) {
+        switch (unit) {
+            case 'V': return 'y';
+            case 'A': return 'y2';
+            case 'Bar': return 'y3';
+            default: return 'y';
+        }
     }
     
     /**
@@ -683,16 +920,13 @@ class BinOscilloscope {
     updateStatusInfo() {
         if (!this.elements.statusInfo) return;
         
-        const totalPoints = this.state.visibleChannels.length > 0 ? 
-            this.state.visibleChannels.length * this.config.maxPointsDefault : 0;
-        
         const timeRange = `${this.state.currentTimeRange.start.toFixed(2)}s - ${this.state.currentTimeRange.end.toFixed(2)}s`;
         
         this.elements.statusInfo.textContent = 
-            `${this.state.visibleChannels.length} channels, ~${totalPoints.toLocaleString()} points, ${timeRange}`;
+            `${this.state.visibleChannels.length} channels, ${timeRange}`;
     }
     
-    // State management methods
+    // UI State management
     showLoading() {
         if (this.elements.loadingSpinner) {
             this.elements.loadingSpinner.classList.remove('hidden');
@@ -722,7 +956,6 @@ class BinOscilloscope {
         }
         this.hideLoading();
         
-        // Emit error event
         this.emit('error', {
             moduleName: 'bin-oscilloscope',
             message: message,
@@ -752,9 +985,6 @@ class BinOscilloscope {
         }
     }
     
-    /**
-     * Handle errors
-     */
     onError(error) {
         this.state.error = error;
         this.showError(error.message);
@@ -779,7 +1009,7 @@ class BinOscilloscope {
         return {
             ...this.state,
             config: this.config,
-            hasPlot: !!this.state.currentPlot,
+            hasPlot: this.state.plotlyInitialized,
             cacheSize: this.state.cachedData.size
         };
     }
@@ -788,8 +1018,13 @@ class BinOscilloscope {
      * Clean up resources
      */
     destroy() {
+        // Remove event listeners
+        if (this.elements.plotContainer) {
+            this.elements.plotContainer.removeEventListener('wheel', this.handleWheelZoom);
+        }
+        
         // Clean up plot
-        if (this.state.currentPlot && this.elements.plotContainer) {
+        if (this.state.plotlyInitialized && this.elements.plotContainer) {
             try {
                 Plotly.purge(this.elements.plotContainer);
             } catch (error) {
