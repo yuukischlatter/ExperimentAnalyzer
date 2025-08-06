@@ -1,0 +1,76 @@
+<!-- Binary Oscilloscope Module Template -->
+<div class="bin-oscilloscope-container">
+    
+    <!-- Module Header -->
+    <div class="bin-oscilloscope-header">
+        <div class="header-content">
+            <div class="header-title">
+                <h3 class="module-title">Binary Oscilloscope</h3>
+                <p class="module-description">Multi-channel waveform visualization</p>
+            </div>
+            
+            <div class="header-controls">
+                <button data-bind="resetZoomBtn" class="btn btn-sm btn-secondary" title="Reset zoom to full view">
+                    <span class="btn-icon">🔍</span> Reset Zoom
+                </button>
+                <button data-bind="resetYAxesBtn" class="btn btn-sm btn-secondary" title="Auto-scale Y axes">
+                    <span class="btn-icon">📏</span> Auto Scale
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Channel Controls -->
+    <div class="bin-oscilloscope-controls">
+        <div data-bind="channelControls" class="channel-controls">
+            <!-- Channel checkboxes will be populated by JavaScript -->
+            <div class="controls-placeholder">
+                <p class="text-muted">Channel controls will appear after loading experiment data</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Main Content Area -->
+    <div class="bin-oscilloscope-content">
+        
+        <!-- Loading State -->
+        <div data-bind="loadingSpinner" class="loading-state hidden">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <h4>Loading Binary Data</h4>
+                <p>Processing experiment measurements...</p>
+            </div>
+        </div>
+        
+        <!-- Error State -->
+        <div data-bind="errorMessage" class="error-state hidden">
+            <div class="error-content">
+                <h4 class="error-title">Unable to Load Binary Data</h4>
+                <p class="error-text">An error occurred while loading the binary file.</p>
+                <div class="error-actions">
+                    <button data-bind="retryBtn" class="btn btn-primary btn-sm">Retry</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Plot Container -->
+        <div data-bind="plotContainer" class="plot-container hidden">
+            <!-- Plotly plot will be rendered here -->
+        </div>
+        
+    </div>
+    
+    <!-- Status Footer -->
+    <div class="bin-oscilloscope-footer">
+        <div class="status-info">
+            <span data-bind="statusInfo" class="status-text">
+                Ready to load experiment data
+            </span>
+        </div>
+        
+        <div class="module-info">
+            <span class="module-version">v1.0</span>
+        </div>
+    </div>
+    
+</div>

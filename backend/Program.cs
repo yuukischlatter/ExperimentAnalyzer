@@ -4,6 +4,7 @@ using Microsoft.Extensions.FileProviders;
 using ExperimentAnalyzer.Database.Interfaces;
 using ExperimentAnalyzer.Database.Repositories;
 using ExperimentAnalyzer.Services.Startup;
+using ExperimentAnalyzer.Services.Data; // ADD THIS LINE
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,6 +23,9 @@ builder.Services.AddSingleton<IDbConnection>(provider =>
 
 // Repository
 builder.Services.AddScoped<IExperimentRepository, ExperimentRepository>();
+
+// ADD THIS LINE - Register BinaryDataProcessor
+builder.Services.AddScoped<BinaryDataProcessor>();
 
 // Startup services
 builder.Services.AddScoped<DirectoryScanner>();
