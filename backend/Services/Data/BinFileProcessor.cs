@@ -5,8 +5,9 @@ namespace ExperimentAnalyzer.Services.Data;
 
 /// <summary>
 /// Core service for processing binary oscilloscope files from PicoScope experiments
+/// Uses sequential reading approach with welding calculations
 /// </summary>
-/// Handles 2-3GB binary files with interleaved 8-channel data
+/// Handles 2-3GB binary files with interleaved 8-channel data and calculates welding parameters
 
 public class BinFileProcessor : IBinFileProcessor
 {
@@ -14,11 +15,15 @@ public class BinFileProcessor : IBinFileProcessor
     
     /// PicoConnect probe input ranges in millivolts
     /// Maps to enum: Range_10MV=0, Range_20MV=1, ..., Range_200V=13
-    
     private static readonly uint[] InputRanges = 
     { 
         10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000 
     };
+
+    /// Welding calculation constants
+    private const double TrafoCurrentMultiplier = 35.0;
+    private const double PressureToForceMultiplier1 = 6.2832;
+    private const double PressureToForceMultiplier2 = 5.0108;
     
     public BinFileProcessor(ILogger<BinFileProcessor> logger)
     {
@@ -95,10 +100,10 @@ public class BinFileProcessor : IBinFileProcessor
     {
         var metadata = await ReadMetadataAsync(binPath);
         
-        _logger.LogInformation("Loading full binary data from: {BinPath} ({Duration}s, {Samples} samples)", 
+        _logger.LogInformation("Loading sequential binary data from: {BinPath} ({Duration}s, {Samples} samples)", 
             binPath, metadata.TotalDurationMs / 1000, metadata.TotalSamples);
         
-        return await LoadBinaryDataInternalAsync(binPath, metadata, null, 1);
+        return await LoadBinaryDataSequentialAsync(binPath, metadata, 1);
     }
     
     public async Task<BinOscilloscopeData> GetOverviewDataAsync(string binPath, int maxPoints = 5000)
@@ -112,7 +117,7 @@ public class BinFileProcessor : IBinFileProcessor
         _logger.LogInformation("Generating overview data: {MaxPoints} points, decimation: {Decimation}", 
             maxPoints, decimationRatio);
         
-        var data = await LoadBinaryDataInternalAsync(binPath, metadata, null, decimationRatio);
+        var data = await LoadBinaryDataSequentialAsync(binPath, metadata, decimationRatio);
         data.IsOverviewData = true;
         
         return data;
@@ -122,39 +127,23 @@ public class BinFileProcessor : IBinFileProcessor
     {
         var metadata = await ReadMetadataAsync(binPath);
 
-        // Fix: Clamp time range to valid bounds instead of throwing error
-        var maxDuration = metadata.TotalDurationMs;
+        // For simplicity, return full data - frontend can filter by time array
+        _logger.LogInformation("Loading time range: {Start}-{End}ms (returning full sequential data)", 
+            startTimeMs, endTimeMs);
 
-        // Clamp to valid range
-        startTimeMs = Math.Max(0, Math.Min(startTimeMs, maxDuration));
-        endTimeMs = Math.Max(startTimeMs + 1, Math.Min(endTimeMs, maxDuration));
-
-        // If the requested range is outside bounds, just use overview data
-        if (startTimeMs >= maxDuration || endTimeMs <= 0)
-        {
-            _logger.LogWarning("Requested time range {Start}-{End}ms outside file duration {Duration}ms, returning overview",
-                startTimeMs, endTimeMs, maxDuration);
-            return await GetOverviewDataAsync(binPath);
-        }
-
-        var timeRange = new TimeRange { StartTimeMs = startTimeMs, EndTimeMs = endTimeMs };
-
-        _logger.LogInformation("Loading time range: {Start}-{End}ms ({Duration}ms) from file duration {FileDuration}ms",
-            startTimeMs, endTimeMs, timeRange.DurationMs, maxDuration);
-
-        var data = await LoadBinaryDataInternalAsync(binPath, metadata, timeRange, 1);
-        data.RequestedRange = timeRange;
+        var data = await LoadBinaryDataSequentialAsync(binPath, metadata, 1);
+        data.RequestedRange = new TimeRange { StartTimeMs = startTimeMs, EndTimeMs = endTimeMs };
 
         return data;
     }
 
-    
-    /// Core binary data loading method with optional time range and decimation
-    
-    private async Task<BinOscilloscopeData> LoadBinaryDataInternalAsync(
+    /// <summary>
+    /// Core sequential data loading method matching standalone Form1.cs logic
+    /// Includes real-time welding calculations during read
+    /// </summary>
+    private async Task<BinOscilloscopeData> LoadBinaryDataSequentialAsync(
         string binPath, 
         BinFileMetadata metadata, 
-        TimeRange? timeRange, 
         int additionalDecimation)
     {
         using var stream = new FileStream(binPath, FileMode.Open, FileAccess.Read);
@@ -163,95 +152,76 @@ public class BinFileProcessor : IBinFileProcessor
         // Skip to data section (after header)
         await SkipHeaderAsync(reader);
         
-        // Calculate sample range to read
-        var (startSample, endSample) = CalculateSampleRange(metadata, timeRange);
-        var totalSamplesToRead = endSample - startSample;
+        _logger.LogDebug("Sequential reading started. Total samples: {Total}, decimation: {Decimation}", 
+            metadata.TotalSamples, additionalDecimation);
         
-        _logger.LogDebug("Reading samples {Start} to {End} (total: {Count}) from file with {Total} samples", 
-            startSample, endSample, totalSamplesToRead, metadata.TotalSamples);
-        
-        // Safety check for massive files
-        if (totalSamplesToRead > 50_000_000 && additionalDecimation == 1)
-        {
-            _logger.LogWarning("Large sample count detected: {Count}. Consider using overview mode.", totalSamplesToRead);
-        }
-        
-        // Initialize data structures
+        // Initialize data structure
         var data = new BinOscilloscopeData
         {
             Metadata = metadata,
-            RequestedRange = timeRange,
-            Channels = new Dictionary<int, ChannelData>()
+            Channels = new Dictionary<int, ChannelData>(),
+            IsOverviewData = additionalDecimation > 1
         };
         
-        // Initialize channel data arrays
+        // Initialize data storage for raw channels (0-7)
         var channelLists = new Dictionary<int, List<double>>();
         var timeList = new List<double>();
         
-        for (int ch = 0; ch < metadata.ChannelCount; ch++)
+        for (int ch = 0; ch < 8; ch++)
         {
             channelLists[ch] = new List<double>();
-            data.Channels[ch] = new ChannelData
-            {
-                Label = metadata.Labels[ch],
-                Unit = metadata.Units[ch],
-                OriginalDownsampling = metadata.Downsampling[ch],
-                AdditionalDecimation = additionalDecimation,
-                Scaling = metadata.Scalings[ch],
-                ProbeRange = metadata.ChannelRanges[ch],
-                Values = Array.Empty<double>() // Will be set after processing
-            };
         }
         
-        // Skip to start sample if needed
-        if (startSample > 0)
+        // Initialize data storage for calculated channels (8-11)
+        var calculatedChannelLists = new Dictionary<int, List<double>>
         {
-            await SkipToSampleAsync(reader, startSample, metadata.ChannelCount);
-        }
+            [8] = new List<double>(), // I_DC_GR1*
+            [9] = new List<double>(), // I_DC_GR2*  
+            [10] = new List<double>(), // U_DC*
+            [11] = new List<double>()  // F_Schlitten*
+        };
         
-        // Read interleaved data - matches original recording logic
-        long[] averageBuffers = new long[metadata.ChannelCount];
-        int[] localIdx = new int[metadata.ChannelCount];
+        // Sequential reading with localidx approach from standalone
+        int[] localIdx = new int[8];
         
-        // Initialize channel data arrays with correct sizes per channel
-        for (int ch = 0; ch < metadata.ChannelCount; ch++)
-        {
-            var channelDataSize = (int)(metadata.TotalSamples / metadata.Downsampling[ch] / additionalDecimation + 1);
-            channelLists[ch] = new List<double>(channelDataSize);
-        }
-        
-        // Read the file exactly as it was written in your original code
+        // Read interleaved data exactly as in Form1.cs
         for (uint j = 0; j < metadata.TotalSamples; j++)
         {
-            for (int ch = 0; ch < metadata.ChannelCount; ch++)
+            // Storage for current sample values (for calculations)
+            double[] currentValues = new double[8];
+            
+            for (int channel = 0; channel < 8; channel++)
             {
-                averageBuffers[ch] += reader.ReadInt16();
+                short rawValue = reader.ReadInt16();
                 
-                // Write data point only when downsampling period is complete (matches original logic)
-                if ((j + 1) % metadata.Downsampling[ch] == 0)
+                // Apply downsampling check - matches Form1.cs logic exactly
+                if (j % metadata.Downsampling[channel] == 0)
                 {
                     // Apply additional decimation for overview
-                    if (localIdx[ch] % additionalDecimation == 0)
+                    if (localIdx[channel] % additionalDecimation == 0)
                     {
-                        var averageRaw = (short)(averageBuffers[ch] / metadata.Downsampling[ch]);
-                        var engineeringValue = ConvertToEngineeringUnits(
-                            averageRaw, 
-                            metadata.ChannelRanges[ch], 
+                        // Convert to engineering units
+                        double engineeringValue = ConvertToEngineeringUnits(
+                            rawValue, 
+                            metadata.ChannelRanges[channel], 
                             metadata.MaxADCValue, 
-                            metadata.Scalings[ch]);
+                            metadata.Scalings[channel]);
                         
-                        channelLists[ch].Add(engineeringValue);
+                        channelLists[channel].Add(engineeringValue);
+                        currentValues[channel] = engineeringValue;
                         
-                        // Add time point (use channel 0 timing as reference)
-                        if (ch == 0)
+                        // Add time point (use channel 0 as reference - fastest sampling)
+                        if (channel == 0)
                         {
-                            var timeMs = j * metadata.SampleIntervalMicroseconds / 1000.0;
+                            double timeMs = j * metadata.SampleIntervalMicroseconds / 1000.0;
                             timeList.Add(timeMs);
                         }
+                        
+                        // Welding calculations - matches Form1.cs logic exactly
+                        PerformWeldingCalculations(channel, currentValues, calculatedChannelLists, localIdx, additionalDecimation);
                     }
                     
-                    localIdx[ch]++;
-                    averageBuffers[ch] = 0;
+                    localIdx[channel]++;
                 }
             }
             
@@ -263,21 +233,143 @@ public class BinFileProcessor : IBinFileProcessor
             }
         }
         
-        // Convert lists to arrays and set final data
+        // Set time array
         data.TimeArray = timeList.ToArray();
         data.TotalDataPoints = timeList.Count;
         
-        for (int ch = 0; ch < metadata.ChannelCount; ch++)
+        // Set raw channel data (channels 0-7)
+        for (int ch = 0; ch < 8; ch++)
         {
-            data.Channels[ch].Values = channelLists[ch].ToArray();
-            data.Channels[ch].PeriodMs = metadata.SampleIntervalMicroseconds * 
-                metadata.Downsampling[ch] * additionalDecimation / 1000.0;
+            data.Channels[ch] = new ChannelData
+            {
+                Values = channelLists[ch].ToArray(),
+                Label = metadata.Labels[ch],
+                Unit = metadata.Units[ch],
+                PeriodMs = metadata.SampleIntervalMicroseconds * metadata.Downsampling[ch] * additionalDecimation / 1000.0,
+                OriginalDownsampling = metadata.Downsampling[ch],
+                AdditionalDecimation = additionalDecimation,
+                Scaling = metadata.Scalings[ch],
+                ProbeRange = metadata.ChannelRanges[ch]
+            };
         }
         
-        _logger.LogDebug("Loaded {Points} data points, channel 0 has {Ch0Points} values", 
-            timeList.Count, channelLists[0].Count);
+        // Set calculated channel data (channels 8-11) - only the visualized ones
+        data.Channels[8] = new ChannelData
+        {
+            Values = calculatedChannelLists[8].ToArray(),
+            Label = "I_DC_GR1*",
+            Unit = "A",
+            PeriodMs = metadata.SampleIntervalMicroseconds * metadata.Downsampling[2] * additionalDecimation / 1000.0,
+            OriginalDownsampling = metadata.Downsampling[2],
+            AdditionalDecimation = additionalDecimation,
+            Scaling = metadata.Scalings[2],
+            ProbeRange = metadata.ChannelRanges[2]
+        };
+        
+        data.Channels[9] = new ChannelData
+        {
+            Values = calculatedChannelLists[9].ToArray(),
+            Label = "I_DC_GR2*",
+            Unit = "A", 
+            PeriodMs = metadata.SampleIntervalMicroseconds * metadata.Downsampling[4] * additionalDecimation / 1000.0,
+            OriginalDownsampling = metadata.Downsampling[4],
+            AdditionalDecimation = additionalDecimation,
+            Scaling = metadata.Scalings[4],
+            ProbeRange = metadata.ChannelRanges[4]
+        };
+        
+        data.Channels[10] = new ChannelData
+        {
+            Values = calculatedChannelLists[10].ToArray(),
+            Label = "U_DC*",
+            Unit = "V",
+            PeriodMs = metadata.SampleIntervalMicroseconds * metadata.Downsampling[0] * additionalDecimation / 1000.0,
+            OriginalDownsampling = metadata.Downsampling[0],
+            AdditionalDecimation = additionalDecimation,
+            Scaling = metadata.Scalings[0],
+            ProbeRange = metadata.ChannelRanges[0]
+        };
+        
+        data.Channels[11] = new ChannelData
+        {
+            Values = calculatedChannelLists[11].ToArray(),
+            Label = "F_Schlitten*",
+            Unit = "kN",
+            PeriodMs = metadata.SampleIntervalMicroseconds * metadata.Downsampling[6] * additionalDecimation / 1000.0,
+            OriginalDownsampling = metadata.Downsampling[6],
+            AdditionalDecimation = additionalDecimation,
+            Scaling = metadata.Scalings[6],
+            ProbeRange = metadata.ChannelRanges[6]
+        };
+        
+        _logger.LogDebug("Sequential loading completed. {Points} data points, {Channels} total channels", 
+            timeList.Count, data.Channels.Count);
         
         return data;
+    }
+    
+    /// <summary>
+    /// Performs welding calculations exactly as in Form1.cs
+    /// Called during sequential reading for real-time calculation
+    /// </summary>
+    private void PerformWeldingCalculations(
+        int channel, 
+        double[] currentValues, 
+        Dictionary<int, List<double>> calculatedChannelLists,
+        int[] localIdx,
+        int additionalDecimation)
+    {
+        // Intermediate calculations (not exposed in API)
+        double ul3l1, il2gr1, il2gr2;
+        
+        // Match Form1.cs calculation logic exactly
+        switch (channel)
+        {
+            case 1: // After UL2L3 is read
+                if (localIdx[channel] % additionalDecimation == 0)
+                {
+                    // UL3L1* = -UL1L2 - UL2L3 (intermediate calculation)
+                    ul3l1 = -currentValues[0] - currentValues[1];
+                    
+                    // U_DC* = (|UL1L2| + |UL2L3| + |UL3L1*|) / 35
+                    double uDc = (Math.Abs(currentValues[0]) + Math.Abs(currentValues[1]) + Math.Abs(ul3l1)) / TrafoCurrentMultiplier;
+                    calculatedChannelLists[10].Add(uDc);
+                }
+                break;
+                
+            case 3: // After IL3GR1 is read  
+                if (localIdx[channel] % additionalDecimation == 0)
+                {
+                    // IL2GR1* = -IL1GR1 - IL3GR1 (intermediate calculation)
+                    il2gr1 = -currentValues[2] - currentValues[3];
+                    
+                    // I_DC_GR1* = 35 * (|IL1GR1| + |IL3GR1| + |IL2GR1*|)
+                    double iDcGr1 = TrafoCurrentMultiplier * (Math.Abs(currentValues[2]) + Math.Abs(currentValues[3]) + Math.Abs(il2gr1));
+                    calculatedChannelLists[8].Add(iDcGr1);
+                }
+                break;
+                
+            case 5: // After IL3GR2 is read
+                if (localIdx[channel] % additionalDecimation == 0)
+                {
+                    // IL2GR2* = -IL1GR2 - IL3GR2 (intermediate calculation) 
+                    il2gr2 = -currentValues[4] - currentValues[5];
+                    
+                    // I_DC_GR2* = 35 * (|IL1GR2| + |IL3GR2| + |IL2GR2*|)
+                    double iDcGr2 = TrafoCurrentMultiplier * (Math.Abs(currentValues[4]) + Math.Abs(currentValues[5]) + Math.Abs(il2gr2));
+                    calculatedChannelLists[9].Add(iDcGr2);
+                }
+                break;
+                
+            case 7: // After P_Rueck is read
+                if (localIdx[channel] % additionalDecimation == 0)
+                {
+                    // F_Schlitten* = P_Vor * 6.2832 - P_Rueck * 5.0108
+                    double force = currentValues[6] * PressureToForceMultiplier1 - currentValues[7] * PressureToForceMultiplier2;
+                    calculatedChannelLists[11].Add(force);
+                }
+                break;
+        }
     }
     
     public double ConvertToEngineeringUnits(short rawValue, uint channelRange, short maxADCValue, short scalingFactor)
@@ -300,7 +392,6 @@ public class BinFileProcessor : IBinFileProcessor
     }
     
     /// Extracts version information from header string
-    
     private static string ExtractVersionFromHeader(string header)
     {
         // Extract version from "Binary data from Picoscope. Use ScottPlotApp to read back. V1.3"
@@ -309,7 +400,6 @@ public class BinFileProcessor : IBinFileProcessor
     }
     
     /// Skips binary header section to reach data by re-reading metadata
-    
     private async Task SkipHeaderAsync(BinaryReader reader)
     {
         // Reset to beginning and read through all header data
@@ -342,33 +432,5 @@ public class BinFileProcessor : IBinFileProcessor
         for (int i = 0; i < 8; i++) reader.ReadString();
         
         // Now we're positioned at the start of data section
-    }
-    
-    /// Calculates sample range based on time range
-    
-    private (uint startSample, uint endSample) CalculateSampleRange(BinFileMetadata metadata, TimeRange? timeRange)
-    {
-        if (timeRange == null)
-        {
-            return (0, metadata.TotalSamples);
-        }
-        
-        var samplesPerMs = 1000.0 / metadata.SampleIntervalMicroseconds;
-        var startSample = (uint)(timeRange.StartTimeMs * samplesPerMs);
-        var endSample = (uint)(timeRange.EndTimeMs * samplesPerMs);
-        
-        // Clamp to valid range
-        startSample = Math.Min(startSample, metadata.TotalSamples);
-        endSample = Math.Min(endSample, metadata.TotalSamples);
-        
-        return (startSample, endSample);
-    }
-    
-    /// Skips to specific sample position in interleaved data
-    
-    private async Task SkipToSampleAsync(BinaryReader reader, uint targetSample, int channelCount)
-    {
-        var bytesToSkip = targetSample * channelCount * sizeof(short);
-        reader.BaseStream.Seek(bytesToSkip, SeekOrigin.Current);
     }
 }

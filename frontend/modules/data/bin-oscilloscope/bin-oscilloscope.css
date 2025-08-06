@@ -1,7 +1,7 @@
 /**
  * Binary Oscilloscope Module - Styling
- * Professional 8-channel oscilloscope visualization using Schlatter design system
- * Follows exact same patterns as experiment-browser module
+ * Welding Parameter Visualization (4 Calculated Channels)
+ * Shows DC voltage, DC current, and force parameters
  */
 
 /* === MODULE CONTAINER === */
@@ -116,6 +116,14 @@
     margin: 0;
     flex: 1;
     font-family: var(--font-family-mono);
+    font-style: italic; /* Italicize calculated channel names */
+}
+
+.channel-label::after {
+    content: '';
+    color: var(--schlatter-blue);
+    font-weight: bold;
+    opacity: 0.7;
 }
 
 .channel-unit {
@@ -125,34 +133,37 @@
     background-color: var(--bg-light);
     padding: 2px 6px;
     border-radius: var(--border-radius-sm);
-    min-width: 24px;
+    min-width: 28px; /* Accommodate 'kN' width */
     text-align: center;
 }
 
-/* === CHANNEL GROUP SPECIFIC STYLING === */
-.voltage-group {
+/* === WELDING PARAMETER GROUP SPECIFIC STYLING === */
+.dc-voltage-group {
     border-left: 3px solid #1f77b4;
 }
 
-.voltage-group .channel-group-title {
+.dc-voltage-group .channel-group-title {
     color: #1f77b4;
 }
 
-.current-group {
+.dc-current-group {
     border-left: 3px solid #ff7f0e;
 }
 
-.current-group .channel-group-title {
+.dc-current-group .channel-group-title {
     color: #ff7f0e;
 }
 
-.pressure-group {
+.force-group {
     border-left: 3px solid #2ca02c;
 }
 
-.pressure-group .channel-group-title {
+.force-group .channel-group-title {
     color: #2ca02c;
 }
+
+/* === LEGACY GROUP STYLING (REMOVED) === */
+/* Removed .voltage-group, .current-group, .pressure-group as they're no longer used */
 
 /* === STATUS DISPLAY === */
 .status-display {
@@ -273,6 +284,22 @@
     cursor: not-allowed;
 }
 
+/* === WELDING PARAMETER SPECIFIC ENHANCEMENTS === */
+.dc-voltage-group .channel-toggle:hover {
+    background-color: rgba(31, 119, 180, 0.05);
+    border-color: rgba(31, 119, 180, 0.2);
+}
+
+.dc-current-group .channel-toggle:hover {
+    background-color: rgba(255, 127, 14, 0.05);
+    border-color: rgba(255, 127, 14, 0.2);
+}
+
+.force-group .channel-toggle:hover {
+    background-color: rgba(44, 160, 44, 0.05);
+    border-color: rgba(44, 160, 44, 0.2);
+}
+
 /* === RESPONSIVE ADJUSTMENTS === */
 @media (max-width: 1200px) {
     .channel-groups {
@@ -329,4 +356,40 @@
 /* === UTILITY CLASSES === */
 .hidden {
     display: none !important;
+}
+
+/* === WELDING PARAMETER VISUAL INDICATORS === */
+.channel-group::before {
+    content: '';
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    opacity: 0.6;
+}
+
+.dc-voltage-group {
+    position: relative;
+}
+
+.dc-voltage-group::before {
+    background-color: #1f77b4;
+}
+
+.dc-current-group {
+    position: relative;
+}
+
+.dc-current-group::before {
+    background-color: #ff7f0e;
+}
+
+.force-group {
+    position: relative;
+}
+
+.force-group::before {
+    background-color: #2ca02c;
 }

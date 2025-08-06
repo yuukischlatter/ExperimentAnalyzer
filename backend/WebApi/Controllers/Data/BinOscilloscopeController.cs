@@ -5,8 +5,13 @@ using ExperimentAnalyzer.Models.Data;
 using ExperimentAnalyzer.Services.Data;
 
 namespace ExperimentAnalyzer.WebApi.Controllers.Data;
+
+/// <summary>
 /// REST API controller for binary oscilloscope data from PicoScope experiments
-/// Provides endpoints for metadata, overview, and full resolution dat
+/// Provides endpoints for metadata, overview, and full resolution data
+/// Returns 12 channels: 8 raw oscilloscope + 4 calculated welding parameters
+/// Uses sequential reading approach with real-time welding calculations
+/// </summary>
 [ApiController]
 [Route("api/experiments/{experimentId}/bin-oscilloscope")]
 public class BinOscilloscopeController : ControllerBase
@@ -25,8 +30,11 @@ public class BinOscilloscopeController : ControllerBase
         _logger = logger;
     }
     
+    /// <summary>
     /// Get binary oscilloscope metadata (fast ~100ms)
     /// Returns header information without loading full data
+    /// Describes 8 physical channels from file
+    /// </summary>
     [HttpGet("metadata")]
     public async Task<ActionResult<ApiResponse<BinFileMetadata>>> GetMetadata(string experimentId)
     {
@@ -42,6 +50,9 @@ public class BinOscilloscopeController : ControllerBase
             
             var metadata = await _binFileProcessor.ReadMetadataAsync(binPath);
             
+            _logger.LogDebug("Metadata retrieved successfully. Duration: {Duration}ms, Physical channels: {Channels}", 
+                metadata.TotalDurationMs, metadata.ChannelCount);
+            
             return Ok(new ApiResponse<BinFileMetadata>
             {
                 Success = true,
@@ -56,8 +67,11 @@ public class BinOscilloscopeController : ControllerBase
         }
     }
     
+    /// <summary>
     /// Get cached overview data (fast ~100ms if cached, ~10s if not cached)
     /// Returns ~5000 decimated points for quick visualization
+    /// Includes all 12 channels: 8 raw + 4 calculated welding parameters
+    /// </summary>
     [HttpGet("overview")]
     public async Task<ActionResult<ApiResponse<BinOscilloscopeData>>> GetOverview(string experimentId)
     {
@@ -69,7 +83,8 @@ public class BinOscilloscopeController : ControllerBase
             var cachedOverview = await _repository.GetCachedOverviewAsync(experimentId);
             if (cachedOverview != null)
             {
-                _logger.LogDebug("Returning cached overview for experiment: {ExperimentId}", experimentId);
+                _logger.LogDebug("Returning cached overview for experiment: {ExperimentId} with {Channels} channels", 
+                    experimentId, cachedOverview.Channels.Count);
                 return Ok(new ApiResponse<BinOscilloscopeData>
                 {
                     Success = true,
@@ -85,8 +100,11 @@ public class BinOscilloscopeController : ControllerBase
                 return NotFound(CreateErrorResponse<BinOscilloscopeData>("Binary file not found for experiment"));
             }
             
-            _logger.LogInformation("Generating overview data for experiment: {ExperimentId}", experimentId);
+            _logger.LogInformation("Generating sequential overview data for experiment: {ExperimentId}", experimentId);
             var overviewData = await _binFileProcessor.GetOverviewDataAsync(binPath);
+            
+            _logger.LogInformation("Overview data generated successfully. {DataPoints} points, {Channels} total channels (including welding calculations)", 
+                overviewData.TotalDataPoints, overviewData.Channels.Count);
             
             // Cache the generated overview
             await _repository.SaveOverviewCacheAsync(experimentId, overviewData);
@@ -105,8 +123,12 @@ public class BinOscilloscopeController : ControllerBase
         }
     }
     
-    /// Get full resolution binary oscilloscope data (slow ~10-30 seconds)
-    /// Returns complete dataset with all channels
+    /// <summary>
+    /// Get full resolution binary oscilloscope data with welding calculations
+    /// Uses sequential reading approach (~10-30 seconds for 2-3GB files)
+    /// Returns 12 channels: 8 raw oscilloscope + 4 calculated welding parameters
+    /// Time range parameters are maintained for API compatibility but simplified implementation
+    /// </summary>
     [HttpGet]
     public async Task<ActionResult<ApiResponse<BinOscilloscopeData>>> GetFullData(
         string experimentId,
@@ -115,8 +137,15 @@ public class BinOscilloscopeController : ControllerBase
     {
         try
         {
-            _logger.LogInformation("Getting full data for experiment: {ExperimentId}, timeRange: {Start}-{End}ms", 
-                experimentId, startTimeMs, endTimeMs);
+            if (startTimeMs.HasValue && endTimeMs.HasValue)
+            {
+                _logger.LogInformation("Getting sequential binary data for experiment: {ExperimentId}, requested range: {Start}-{End}ms", 
+                    experimentId, startTimeMs, endTimeMs);
+            }
+            else
+            {
+                _logger.LogInformation("Getting full sequential binary data for experiment: {ExperimentId}", experimentId);
+            }
             
             var binPath = await GetBinFilePathAsync(experimentId);
             if (binPath == null)
@@ -126,15 +155,23 @@ public class BinOscilloscopeController : ControllerBase
             
             BinOscilloscopeData data;
             
-            // Load time range or full data
+            // Simplified approach: load full data, let frontend filter by TimeArray if needed
             if (startTimeMs.HasValue && endTimeMs.HasValue)
             {
                 data = await _binFileProcessor.GetTimeRangeDataAsync(binPath, startTimeMs.Value, endTimeMs.Value);
+                _logger.LogInformation("Sequential data loaded with requested range reference. {DataPoints} points, {Channels} channels", 
+                    data.TotalDataPoints, data.Channels.Count);
             }
             else
             {
                 data = await _binFileProcessor.GetBinDataAsync(binPath);
+                _logger.LogInformation("Full sequential data loaded successfully. {DataPoints} points, {Channels} channels including welding calculations", 
+                    data.TotalDataPoints, data.Channels.Count);
             }
+            
+            // Log welding channel availability
+            var weldingChannels = data.Channels.Where(kvp => kvp.Value.IsCalculatedWeldingChannel).Count();
+            _logger.LogDebug("Welding calculations included: {WeldingChannels} calculated channels", weldingChannels);
             
             return Ok(new ApiResponse<BinOscilloscopeData>
             {
@@ -143,20 +180,19 @@ public class BinOscilloscopeController : ControllerBase
                 Metadata = CreateApiMetadata()
             });
         }
-        catch (ArgumentException ex)
-        {
-            _logger.LogWarning(ex, "Invalid time range for experiment: {ExperimentId}", experimentId);
-            return BadRequest(CreateErrorResponse<BinOscilloscopeData>(ex.Message));
-        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get full data for experiment: {ExperimentId}", experimentId);
+            _logger.LogError(ex, "Failed to get sequential data for experiment: {ExperimentId}", experimentId);
             return StatusCode(500, CreateErrorResponse<BinOscilloscopeData>(ex.Message));
         }
     }
     
+    /// <summary>
     /// Get specific time range data with full resolution
-    /// Efficient extraction of time windows for detailed analysis
+    /// Simplified implementation: returns full data with RequestedRange property set
+    /// Frontend can filter using TimeArray for actual time range extraction
+    /// Includes all 12 channels: 8 raw + 4 calculated welding parameters
+    /// </summary>
     [HttpGet("range")]
     public async Task<ActionResult<ApiResponse<BinOscilloscopeData>>> GetTimeRange(
         string experimentId,
@@ -170,7 +206,7 @@ public class BinOscilloscopeController : ControllerBase
                 return BadRequest(CreateErrorResponse<BinOscilloscopeData>("Invalid time range parameters"));
             }
             
-            _logger.LogDebug("Getting time range data for experiment: {ExperimentId}, range: {Start}-{End}ms", 
+            _logger.LogDebug("Getting sequential time range data for experiment: {ExperimentId}, range: {Start}-{End}ms", 
                 experimentId, startTimeMs, endTimeMs);
             
             var binPath = await GetBinFilePathAsync(experimentId);
@@ -181,6 +217,9 @@ public class BinOscilloscopeController : ControllerBase
             
             var data = await _binFileProcessor.GetTimeRangeDataAsync(binPath, startTimeMs, endTimeMs);
             
+            _logger.LogInformation("Sequential time range data loaded. {DataPoints} points, {Channels} channels, requested range: {Start}-{End}ms", 
+                data.TotalDataPoints, data.Channels.Count, startTimeMs, endTimeMs);
+            
             return Ok(new ApiResponse<BinOscilloscopeData>
             {
                 Success = true,
@@ -188,19 +227,16 @@ public class BinOscilloscopeController : ControllerBase
                 Metadata = CreateApiMetadata()
             });
         }
-        catch (ArgumentException ex)
-        {
-            _logger.LogWarning(ex, "Invalid time range for experiment: {ExperimentId}", experimentId);
-            return BadRequest(CreateErrorResponse<BinOscilloscopeData>(ex.Message));
-        }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Failed to get time range data for experiment: {ExperimentId}", experimentId);
+            _logger.LogError(ex, "Failed to get sequential time range data for experiment: {ExperimentId}", experimentId);
             return StatusCode(500, CreateErrorResponse<BinOscilloscopeData>(ex.Message));
         }
     }
     
+    /// <summary>
     /// Resolves binary file path for experiment
+    /// </summary>
     private async Task<string?> GetBinFilePathAsync(string experimentId)
     {
         var experiment = await _repository.GetExperimentAsync(experimentId);
@@ -213,7 +249,9 @@ public class BinOscilloscopeController : ControllerBase
         return System.IO.File.Exists(binPath) ? binPath : null;
     }
     
+    /// <summary>
     /// Creates standardized API metadata
+    /// </summary>
     private ApiMetadata CreateApiMetadata()
     {
         return new ApiMetadata
@@ -223,7 +261,9 @@ public class BinOscilloscopeController : ControllerBase
         };
     }
     
+    /// <summary>
     /// Creates standardized error response
+    /// </summary>
     private ApiResponse<T> CreateErrorResponse<T>(string errorMessage)
     {
         return new ApiResponse<T>

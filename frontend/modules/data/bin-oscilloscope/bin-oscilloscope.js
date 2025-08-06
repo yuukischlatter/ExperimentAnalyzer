@@ -1,7 +1,7 @@
 /**
  * Binary Oscilloscope Module
- * 8-Channel PicoScope Data Visualization with Progressive Loading
- * Follows exact same patterns as ExperimentBrowser module
+ * Welding Parameter Visualization (4 Calculated Channels)
+ * Shows DC voltage, DC current, and force calculations from PicoScope data
  */
 
 class BinOscilloscope {
@@ -14,26 +14,50 @@ class BinOscilloscope {
             currentExperiment: null,
             data: null,
             plotDiv: null,
-            channelVisibility: { 0: true, 1: true, 2: true, 3: true, 4: true, 5: true, 6: true, 7: true },
+            channelVisibility: { 8: true, 9: true, 10: true, 11: true },
             isLoading: false,
             error: null,
             zoomLoadingTimeout: null
         };
         this.elements = {};
         
-        // Channel configuration matching backend
+        // Channel configuration for calculated welding parameters (channels 8-11)
         this.channelConfig = {
-            0: { label: 'UL1L2', unit: 'V', axis: 'y', color: '#1f77b4', group: 'voltage' },
-            1: { label: 'UL2L3', unit: 'V', axis: 'y', color: '#aec7e8', group: 'voltage' },
-            2: { label: 'IL1GR1', unit: 'A', axis: 'y2', color: '#ff7f0e', group: 'current' },
-            3: { label: 'IL3GR1', unit: 'A', axis: 'y2', color: '#ffbb78', group: 'current' },
-            4: { label: 'IL1GR2', unit: 'A', axis: 'y2', color: '#d62728', group: 'current' },
-            5: { label: 'IL3GR2', unit: 'A', axis: 'y2', color: '#ff9896', group: 'current' },
-            6: { label: 'P_Vor', unit: 'Bar', axis: 'y3', color: '#2ca02c', group: 'pressure' },
-            7: { label: 'P_Rueck', unit: 'Bar', axis: 'y3', color: '#98df8a', group: 'pressure' }
+            8: { 
+                label: 'I_DC_GR1*', 
+                unit: 'A', 
+                axis: 'y2', 
+                color: '#ff7f0e', 
+                group: 'dc-current',
+                description: 'DC Current Group 1'
+            },
+            9: { 
+                label: 'I_DC_GR2*', 
+                unit: 'A', 
+                axis: 'y2', 
+                color: '#d62728', 
+                group: 'dc-current',
+                description: 'DC Current Group 2'
+            },
+            10: { 
+                label: 'U_DC*', 
+                unit: 'V', 
+                axis: 'y', 
+                color: '#1f77b4', 
+                group: 'dc-voltage',
+                description: 'DC Voltage'
+            },
+            11: { 
+                label: 'F_Schlitten*', 
+                unit: 'kN', 
+                axis: 'y3', 
+                color: '#2ca02c', 
+                group: 'force',
+                description: 'Force from Pressure Sensors'
+            }
         };
         
-        console.log('BinOscilloscope initialized');
+        console.log('BinOscilloscope initialized for welding parameters');
         this.init();
     }
     
@@ -107,8 +131,8 @@ class BinOscilloscope {
     }
     
     attachEvents() {
-        // Channel toggle checkboxes
-        for (let i = 0; i < 8; i++) {
+        // Channel toggle checkboxes for calculated channels (8-11)
+        for (let i = 8; i < 12; i++) {
             const checkbox = this.elements[`channel${i}Checkbox`];
             if (checkbox) {
                 checkbox.addEventListener('change', (e) => {
@@ -153,7 +177,7 @@ class BinOscilloscope {
             
             // Load overview data (cached or generated)
             if (this.config.autoLoadOverview) {
-                this.showLoading('Loading overview data...');
+                this.showLoading('Loading welding parameter data...');
                 await this.loadOverviewData(experimentId);
             }
             
@@ -201,7 +225,7 @@ class BinOscilloscope {
         this.hideLoading();
         this.onDataLoaded();
         
-        console.log(`Overview loaded: ${this.calculateTotalPoints(result.data)} points`);
+        console.log(`Welding parameters loaded: ${this.calculateTotalPoints(result.data)} points`);
     }
     
     async initializePlot(data) {
@@ -221,11 +245,13 @@ class BinOscilloscope {
     createPlotlyTraces(data) {
         const traces = [];
         
+        // Only process calculated welding parameter channels (8-11)
         Object.entries(data.channels).forEach(([channelIndex, channelData]) => {
             const chIndex = parseInt(channelIndex);
             const config = this.channelConfig[chIndex];
             
-            if (this.state.channelVisibility[chIndex] && config) {
+            // Only show channels 8-11 (calculated welding parameters)
+            if (this.state.channelVisibility[chIndex] && config && chIndex >= 8 && chIndex <= 11) {
                 traces.push({
                     x: data.timeArray,
                     y: channelData.values,
@@ -234,10 +260,11 @@ class BinOscilloscope {
                     mode: 'lines',
                     line: { 
                         color: config.color,
-                        width: config.group === 'voltage' ? 2 : 1.5
+                        width: config.group === 'dc-voltage' ? 2 : 1.5
                     },
                     yaxis: config.axis,
                     hovertemplate: `<b>${config.label}</b><br>` +
+                                  `${config.description}<br>` +
                                   `Time: %{x:.2f} ms<br>` +
                                   `Value: %{y:.3f} ${config.unit}<extra></extra>`
                 });
@@ -250,7 +277,7 @@ class BinOscilloscope {
     createPlotlyLayout(data) {
         return {
             title: {
-                text: `Binary Oscilloscope - ${this.state.currentExperiment}`,
+                text: `Welding Parameters - ${this.state.currentExperiment}`,
                 font: { size: 16, color: '#003278' }
             },
             xaxis: {
@@ -259,7 +286,7 @@ class BinOscilloscope {
                 gridcolor: '#E0E0E0'
             },
             yaxis: {
-                title: 'Voltage (V)',
+                title: 'DC Voltage (V)',
                 titlefont: { color: '#1f77b4' },
                 tickfont: { color: '#1f77b4' },
                 side: 'left',
@@ -267,7 +294,7 @@ class BinOscilloscope {
                 gridcolor: '#F0F0F0'
             },
             yaxis2: {
-                title: 'Current (A)',
+                title: 'DC Current (A)',
                 titlefont: { color: '#ff7f0e' },
                 tickfont: { color: '#ff7f0e' },
                 overlaying: 'y',
@@ -275,7 +302,7 @@ class BinOscilloscope {
                 showgrid: false
             },
             yaxis3: {
-                title: 'Pressure (Bar)',
+                title: 'Force (kN)',
                 titlefont: { color: '#2ca02c' },
                 tickfont: { color: '#2ca02c' },
                 overlaying: 'y',
@@ -415,7 +442,7 @@ class BinOscilloscope {
             format: 'png',
             width: 1200,
             height: 800,
-            filename: `oscilloscope_${this.state.currentExperiment}_${Date.now()}`
+            filename: `welding_parameters_${this.state.currentExperiment}_${Date.now()}`
         });
         
         this.emit('plotExported', {
@@ -518,10 +545,15 @@ class BinOscilloscope {
     }
     
     onDataLoaded() {
+        const weldingChannels = Object.keys(this.state.data?.channels || {})
+            .filter(ch => parseInt(ch) >= 8 && parseInt(ch) <= 11)
+            .length;
+            
         this.emit('dataLoaded', {
             experimentId: this.state.currentExperiment,
             totalPoints: this.calculateTotalPoints(this.state.data),
-            channels: Object.keys(this.state.data?.channels || {}).length
+            weldingChannels: weldingChannels,
+            channels: ['DC Voltage', 'DC Current GR1', 'DC Current GR2', 'Force']
         });
     }
     
@@ -599,7 +631,8 @@ class BinOscilloscope {
     getState() {
         return {
             ...this.state,
-            config: this.config
+            config: this.config,
+            availableChannels: Object.keys(this.channelConfig)
         };
     }
 }
