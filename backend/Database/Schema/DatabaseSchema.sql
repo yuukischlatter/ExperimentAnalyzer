@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS experiments (
     has_acceleration_csv BOOLEAN DEFAULT FALSE,
     has_position_csv BOOLEAN DEFAULT FALSE,
     has_tensile_csv BOOLEAN DEFAULT FALSE,
-    has_photos BOOLEAN DEFAULT FALSE,       -- ← ADDED THIS LINE
+    has_photos BOOLEAN DEFAULT FALSE,
     has_thermal_ravi BOOLEAN DEFAULT FALSE,
     has_tcp5_file BOOLEAN DEFAULT FALSE,
     has_weld_journal BOOLEAN DEFAULT FALSE,
@@ -39,16 +39,6 @@ CREATE TABLE IF NOT EXISTS experiment_metadata (
     einlaufseite TEXT,                      
     auslaufseite TEXT,                      
     parsed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    
-    FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
-);
-
--- Cached overview data for binary oscilloscope files
--- Stores ~5000 decimated points for instant loading
-CREATE TABLE IF NOT EXISTS bin_overview_cache (
-    experiment_id TEXT PRIMARY KEY,
-    overview_data TEXT NOT NULL,            -- JSON serialized BinOscilloscopeData
-    cached_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     
     FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
 );

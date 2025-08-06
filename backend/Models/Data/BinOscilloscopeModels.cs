@@ -22,9 +22,6 @@ public class BinOscilloscopeData
     
     /// Total number of data points returned
     public int TotalDataPoints { get; set; }
-    
-    /// Indicates if this is overview data (decimated) or full resolution
-    public bool IsOverviewData { get; set; }
 
     // Channel index constants for calculated welding parameters
     /// <summary>DC Current Group 1 calculated channel index</summary>
@@ -96,7 +93,7 @@ public class ChannelData
     /// Original downsampling ratio from recording [1,1,10,10,10,10,10,10]
     public int OriginalDownsampling { get; set; }
     
-    /// Additional decimation applied for this request
+    /// Additional decimation applied for this request (always 1 for full resolution)
     public int AdditionalDecimation { get; set; }
     
     /// Scaling factor from header [100,100,100,100,100,100,350,350]

@@ -87,8 +87,7 @@ using (var scope = app.Services.CreateScope())
         if (success)
         {
             var count = await repository.GetExperimentCountAsync();
-            var cacheCount = await repository.GetCachedOverviewCountAsync();
-            Console.WriteLine($"Data initialization completed successfully. Total experiments: {count}, Cached overviews: {cacheCount}");
+            Console.WriteLine($"Data initialization completed successfully. Total experiments: {count}");
         }
         else
         {

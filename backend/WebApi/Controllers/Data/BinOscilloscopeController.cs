@@ -8,9 +8,9 @@ namespace ExperimentAnalyzer.WebApi.Controllers.Data;
 
 /// <summary>
 /// REST API controller for binary oscilloscope data from PicoScope experiments
-/// Provides endpoints for metadata, overview, and full resolution data
+/// Provides endpoints for metadata and browser-safe data with automatic decimation
 /// Returns 12 channels: 8 raw oscilloscope + 4 calculated welding parameters
-/// Uses sequential reading approach with real-time welding calculations
+/// Uses sequential reading approach with automatic temp file optimization
 /// </summary>
 [ApiController]
 [Route("api/experiments/{experimentId}/bin-oscilloscope")]
@@ -31,9 +31,10 @@ public class BinOscilloscopeController : ControllerBase
     }
     
     /// <summary>
-    /// Get binary oscilloscope metadata (fast ~100ms)
+    /// Get binary oscilloscope metadata (fast ~50ms from temp file)
     /// Returns header information without loading full data
     /// Describes 8 physical channels from file
+    /// Automatically copies network files to temp folder for optimal performance
     /// </summary>
     [HttpGet("metadata")]
     public async Task<ActionResult<ApiResponse<BinFileMetadata>>> GetMetadata(string experimentId)
@@ -68,83 +69,31 @@ public class BinOscilloscopeController : ControllerBase
     }
     
     /// <summary>
-    /// Get cached overview data (fast ~100ms if cached, ~10s if not cached)
-    /// Returns ~5000 decimated points for quick visualization
-    /// Includes all 12 channels: 8 raw + 4 calculated welding parameters
-    /// </summary>
-    [HttpGet("overview")]
-    public async Task<ActionResult<ApiResponse<BinOscilloscopeData>>> GetOverview(string experimentId)
-    {
-        try
-        {
-            _logger.LogDebug("Getting overview data for experiment: {ExperimentId}", experimentId);
-            
-            // Check cache first
-            var cachedOverview = await _repository.GetCachedOverviewAsync(experimentId);
-            if (cachedOverview != null)
-            {
-                _logger.LogDebug("Returning cached overview for experiment: {ExperimentId} with {Channels} channels", 
-                    experimentId, cachedOverview.Channels.Count);
-                return Ok(new ApiResponse<BinOscilloscopeData>
-                {
-                    Success = true,
-                    Data = cachedOverview,
-                    Metadata = CreateApiMetadata()
-                });
-            }
-            
-            // Generate overview if not cached
-            var binPath = await GetBinFilePathAsync(experimentId);
-            if (binPath == null)
-            {
-                return NotFound(CreateErrorResponse<BinOscilloscopeData>("Binary file not found for experiment"));
-            }
-            
-            _logger.LogInformation("Generating sequential overview data for experiment: {ExperimentId}", experimentId);
-            var overviewData = await _binFileProcessor.GetOverviewDataAsync(binPath);
-            
-            _logger.LogInformation("Overview data generated successfully. {DataPoints} points, {Channels} total channels (including welding calculations)", 
-                overviewData.TotalDataPoints, overviewData.Channels.Count);
-            
-            // Cache the generated overview
-            await _repository.SaveOverviewCacheAsync(experimentId, overviewData);
-            
-            return Ok(new ApiResponse<BinOscilloscopeData>
-            {
-                Success = true,
-                Data = overviewData,
-                Metadata = CreateApiMetadata()
-            });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to get overview data for experiment: {ExperimentId}", experimentId);
-            return StatusCode(500, CreateErrorResponse<BinOscilloscopeData>(ex.Message));
-        }
-    }
-    
-    /// <summary>
     /// Get full resolution binary oscilloscope data with welding calculations
-    /// Uses sequential reading approach (~10-30 seconds for 2-3GB files)
+    /// Uses sequential reading approach with automatic temp file optimization
+    /// Operation time: ~2-5 seconds from local temp file (vs 10-30s from network)
     /// Returns 12 channels: 8 raw oscilloscope + 4 calculated welding parameters
+    /// Automatically decimates data for browser compatibility (default: 2000 points, max: 10000)
     /// Time range parameters are maintained for API compatibility but simplified implementation
     /// </summary>
     [HttpGet]
     public async Task<ActionResult<ApiResponse<BinOscilloscopeData>>> GetFullData(
         string experimentId,
         [FromQuery] double? startTimeMs = null,
-        [FromQuery] double? endTimeMs = null)
+        [FromQuery] double? endTimeMs = null,
+        [FromQuery] int maxPoints = 2000)
     {
         try
         {
             if (startTimeMs.HasValue && endTimeMs.HasValue)
             {
-                _logger.LogInformation("Getting sequential binary data for experiment: {ExperimentId}, requested range: {Start}-{End}ms", 
-                    experimentId, startTimeMs, endTimeMs);
+                _logger.LogInformation("Getting sequential binary data for experiment: {ExperimentId}, requested range: {Start}-{End}ms, maxPoints: {MaxPoints}", 
+                    experimentId, startTimeMs, endTimeMs, maxPoints);
             }
             else
             {
-                _logger.LogInformation("Getting full sequential binary data for experiment: {ExperimentId}", experimentId);
+                _logger.LogInformation("Getting full sequential binary data for experiment: {ExperimentId}, maxPoints: {MaxPoints}", 
+                    experimentId, maxPoints);
             }
             
             var binPath = await GetBinFilePathAsync(experimentId);
@@ -155,23 +104,27 @@ public class BinOscilloscopeController : ControllerBase
             
             BinOscilloscopeData data;
             
-            // Simplified approach: load full data, let frontend filter by TimeArray if needed
+            // Simplified approach: load full data with decimation, let frontend filter by TimeArray if needed
             if (startTimeMs.HasValue && endTimeMs.HasValue)
             {
-                data = await _binFileProcessor.GetTimeRangeDataAsync(binPath, startTimeMs.Value, endTimeMs.Value);
+                data = await _binFileProcessor.GetTimeRangeDataAsync(binPath, startTimeMs.Value, endTimeMs.Value, maxPoints);
                 _logger.LogInformation("Sequential data loaded with requested range reference. {DataPoints} points, {Channels} channels", 
                     data.TotalDataPoints, data.Channels.Count);
             }
             else
             {
-                data = await _binFileProcessor.GetBinDataAsync(binPath);
+                data = await _binFileProcessor.GetBinDataAsync(binPath, maxPoints);
                 _logger.LogInformation("Full sequential data loaded successfully. {DataPoints} points, {Channels} channels including welding calculations", 
                     data.TotalDataPoints, data.Channels.Count);
             }
             
-            // Log welding channel availability
+            // Log welding channel availability and decimation info
             var weldingChannels = data.Channels.Where(kvp => kvp.Value.IsCalculatedWeldingChannel).Count();
-            _logger.LogDebug("Welding calculations included: {WeldingChannels} calculated channels", weldingChannels);
+            var wasDecimated = data.Channels.Values.Any(c => c.AdditionalDecimation > 1);
+            var decimationRatio = data.Channels.Values.Max(c => c.AdditionalDecimation);
+            
+            _logger.LogInformation("Welding calculations included: {WeldingChannels} calculated channels, decimated: {WasDecimated} (ratio: {Ratio})", 
+                weldingChannels, wasDecimated, decimationRatio);
             
             return Ok(new ApiResponse<BinOscilloscopeData>
             {
@@ -188,16 +141,18 @@ public class BinOscilloscopeController : ControllerBase
     }
     
     /// <summary>
-    /// Get specific time range data with full resolution
+    /// Get specific time range data with browser-safe decimation
     /// Simplified implementation: returns full data with RequestedRange property set
     /// Frontend can filter using TimeArray for actual time range extraction
     /// Includes all 12 channels: 8 raw + 4 calculated welding parameters
+    /// Uses automatic temp file optimization for network files
     /// </summary>
     [HttpGet("range")]
     public async Task<ActionResult<ApiResponse<BinOscilloscopeData>>> GetTimeRange(
         string experimentId,
         [FromQuery] double startTimeMs,
-        [FromQuery] double endTimeMs)
+        [FromQuery] double endTimeMs,
+        [FromQuery] int maxPoints = 2000)
     {
         try
         {
@@ -206,8 +161,8 @@ public class BinOscilloscopeController : ControllerBase
                 return BadRequest(CreateErrorResponse<BinOscilloscopeData>("Invalid time range parameters"));
             }
             
-            _logger.LogDebug("Getting sequential time range data for experiment: {ExperimentId}, range: {Start}-{End}ms", 
-                experimentId, startTimeMs, endTimeMs);
+            _logger.LogDebug("Getting sequential time range data for experiment: {ExperimentId}, range: {Start}-{End}ms, maxPoints: {MaxPoints}", 
+                experimentId, startTimeMs, endTimeMs, maxPoints);
             
             var binPath = await GetBinFilePathAsync(experimentId);
             if (binPath == null)
@@ -215,10 +170,14 @@ public class BinOscilloscopeController : ControllerBase
                 return NotFound(CreateErrorResponse<BinOscilloscopeData>("Binary file not found for experiment"));
             }
             
-            var data = await _binFileProcessor.GetTimeRangeDataAsync(binPath, startTimeMs, endTimeMs);
+            var data = await _binFileProcessor.GetTimeRangeDataAsync(binPath, startTimeMs, endTimeMs, maxPoints);
             
-            _logger.LogInformation("Sequential time range data loaded. {DataPoints} points, {Channels} channels, requested range: {Start}-{End}ms", 
-                data.TotalDataPoints, data.Channels.Count, startTimeMs, endTimeMs);
+            // Log decimation info
+            var wasDecimated = data.Channels.Values.Any(c => c.AdditionalDecimation > 1);
+            var decimationRatio = data.Channels.Values.Max(c => c.AdditionalDecimation);
+            
+            _logger.LogInformation("Sequential time range data loaded. {DataPoints} points, {Channels} channels, requested range: {Start}-{End}ms, decimated: {WasDecimated} (ratio: {Ratio})", 
+                data.TotalDataPoints, data.Channels.Count, startTimeMs, endTimeMs, wasDecimated, decimationRatio);
             
             return Ok(new ApiResponse<BinOscilloscopeData>
             {
