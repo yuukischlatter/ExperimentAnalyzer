@@ -19,8 +19,8 @@ class BinOscilloscope {
             isLoading: false,
             error: null,
             
-            // Channel visibility (all visible by default)
-            visibleChannels: [0, 1, 2, 3, 4, 5, 6, 7],
+            // Channel visibility (only channel 0 for testing)
+            visibleChannels: [0],
             
             // Current time range for zoom-responsive loading
             currentTimeRange: { start: 0, end: 100 },
@@ -57,7 +57,7 @@ class BinOscilloscope {
     async init() {
         try {
             await this.loadTemplate();
-            this.render(); // Ensure template is rendered
+            this.render();
             this.bindElements();
             this.attachEvents();
             this.show();
@@ -89,7 +89,7 @@ class BinOscilloscope {
     }
     
     /**
-     * Render template to container
+     * Render template to container - FIXED VERSION
      */
     render() {
         const container = document.getElementById(this.containerId);
@@ -101,9 +101,10 @@ class BinOscilloscope {
             throw new Error('Template not loaded');
         }
         
-        console.log('Rendering template to container:', this.containerId);
+        console.log('🎨 Rendering template to container:', this.containerId);
         container.innerHTML = this.template;
-        console.log('Template rendered successfully');
+        console.log('✅ Template rendered successfully');
+        // DON'T call bindElements() here - let init() handle it
     }
     
     /**
@@ -284,13 +285,16 @@ class BinOscilloscope {
     }
     
     /**
-     * Load data for a specific channel
+     * Load data for a specific channel - DEBUG VERSION
      */
     async loadChannelData(channel, startTime, endTime, maxPoints = null) {
         const cacheKey = `${channel}_${startTime}_${endTime}_${maxPoints || this.config.maxPointsDefault}`;
         
+        console.log(`🔍 Loading channel ${channel} data (${startTime}s - ${endTime}s, ${maxPoints || this.config.maxPointsDefault} points)...`);
+        
         // Check cache first
         if (this.state.cachedData.has(cacheKey)) {
+            console.log(`🎯 Cache hit for channel ${channel}`);
             return this.state.cachedData.get(cacheKey);
         }
         
@@ -300,23 +304,52 @@ class BinOscilloscope {
             maxPoints: (maxPoints || this.config.maxPointsDefault).toString()
         });
         
-        const response = await fetch(
-            `${this.config.apiBaseUrl}/experiments/${this.state.currentExperiment}/binary/data/${channel}?${params}`
-        );
+        console.log(`📡 Fetching channel ${channel} data from API...`);
+        console.log(`🌐 URL: ${this.config.apiBaseUrl}/experiments/${this.state.currentExperiment}/binary/data/${channel}?${params}`);
         
-        if (!response.ok) {
-            throw new Error(`Failed to load channel ${channel} data: ${response.status}`);
+        try {
+            const response = await fetch(
+                `${this.config.apiBaseUrl}/experiments/${this.state.currentExperiment}/binary/data/${channel}?${params}`
+            );
+            
+            console.log(`📡 Response for channel ${channel}:`, {
+                status: response.status,
+                statusText: response.statusText,
+                ok: response.ok,
+                headers: Object.fromEntries(response.headers.entries())
+            });
+            
+            if (!response.ok) {
+                console.error(`❌ Response not OK for channel ${channel}:`, response.status, response.statusText);
+                throw new Error(`Failed to load channel ${channel} data: ${response.status}`);
+            }
+            
+            console.log(`🔄 Starting JSON parsing for channel ${channel}...`);
+            const result = await response.json();
+            console.log(`✅ JSON parsed successfully for channel ${channel}. Success:`, result.success);
+            
+            if (!result.success) {
+                console.error(`❌ API returned unsuccessful for channel ${channel}:`, result.error);
+                throw new Error(result.error || `Channel ${channel} data request failed`);
+            }
+            
+            console.log(`💾 Caching data for channel ${channel} (${result.data.actualPoints || result.data.values?.length} points)`);
+            
+            // Cache the result
+            this.state.cachedData.set(cacheKey, result.data);
+            
+            console.log(`🎉 Successfully loaded channel ${channel} data`);
+            return result.data;
+            
+        } catch (error) {
+            console.error(`💥 Error loading channel ${channel} data:`, error);
+            console.error(`💥 Error details:`, {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+            });
+            throw error;
         }
-        
-        const result = await response.json();
-        if (!result.success) {
-            throw new Error(result.error || `Channel ${channel} data request failed`);
-        }
-        
-        // Cache the result
-        this.state.cachedData.set(cacheKey, result.data);
-        
-        return result.data;
     }
     
     /**
@@ -402,13 +435,48 @@ class BinOscilloscope {
     }
     
     /**
-     * Create Plotly plot with event handlers
+     * Create Plotly plot with event handlers - FIXED VERSION
      */
     async createPlot(traces, layout) {
-        const plotContainer = this.elements.plotContainer;
-        if (!plotContainer) {
-            throw new Error('Plot container not found');
+        console.log('🎨 Creating plot with', traces.length, 'traces...');
+        
+        // Wait for DOM element to be ready
+        let plotContainer = this.elements.plotContainer;
+        let retryCount = 0;
+        const maxRetries = 10;
+        
+        // Retry logic to wait for DOM element
+        while (!plotContainer && retryCount < maxRetries) {
+            console.log(`⏳ Plot container not found, retry ${retryCount + 1}/${maxRetries}...`);
+            
+            // Re-bind elements in case they weren't ready before
+            this.bindElements();
+            plotContainer = this.elements.plotContainer;
+            
+            if (!plotContainer) {
+                // Wait a bit and try again
+                await new Promise(resolve => setTimeout(resolve, 100));
+                retryCount++;
+            }
         }
+        
+        if (!plotContainer) {
+            console.error('💥 Plot container still not found after retries');
+            console.error('💥 Available elements:', Object.keys(this.elements));
+            console.error('💥 Container ID:', this.containerId);
+            
+            // Check if the container exists in DOM
+            const containerElement = document.getElementById(this.containerId);
+            console.error('💥 Container element exists:', !!containerElement);
+            
+            if (containerElement) {
+                console.error('💥 Container innerHTML:', containerElement.innerHTML.slice(0, 200) + '...');
+            }
+            
+            throw new Error('Plot container not found after multiple retries');
+        }
+        
+        console.log('✅ Plot container found, creating Plotly plot...');
         
         const config = {
             responsive: true,
@@ -416,13 +484,19 @@ class BinOscilloscope {
             scrollZoom: false
         };
         
-        // Create plot
-        this.state.currentPlot = await Plotly.newPlot(plotContainer, traces, layout, config);
-        
-        // Setup event listeners
-        this.setupPlotEventListeners();
-        
-        console.log('Plotly plot created successfully');
+        try {
+            // Create plot
+            this.state.currentPlot = await Plotly.newPlot(plotContainer, traces, layout, config);
+            
+            // Setup event listeners
+            this.setupPlotEventListeners();
+            
+            console.log('🎉 Plotly plot created successfully');
+            
+        } catch (error) {
+            console.error('💥 Error creating Plotly plot:', error);
+            throw error;
+        }
     }
     
     /**

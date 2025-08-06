@@ -302,15 +302,15 @@ class ExperimentAnalyzer {
     async loadDataModulesForExperiment(experiment) {
         const moduleMap = {
             'hasBinFile': 'bin-oscilloscope',                   
-            'hasAccelerationCsv': 'acceleration',              
-            'hasPositionCsv': 'position',                      
-            'hasTensileCsv': 'tensile-strength',               
-            'hasPhotos': 'photo-gallery',                      
-            'hasThermalRavi': 'thermal-ir',                    
-            'hasTcp5File': 'tcp5-oscilloscope',                
-            'hasWeldJournal': 'weld-journal',                  
-            'hasCrownMeasurements': 'crown-measurements',      
-            'hasAmbientTemperature': 'ambient-temperature'      
+            //'hasAccelerationCsv': 'acceleration',              
+            //'hasPositionCsv': 'position',                      
+            //'hasTensileCsv': 'tensile-strength',               
+            //'hasPhotos': 'photo-gallery',                      
+            //'hasThermalRavi': 'thermal-ir',                    
+            //'hasTcp5File': 'tcp5-oscilloscope',                
+            //'hasWeldJournal': 'weld-journal',                  
+            //'hasCrownMeasurements': 'crown-measurements',      
+            //'hasAmbientTemperature': 'ambient-temperature'      
         };
         
         const loadPromises = [];
