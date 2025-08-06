@@ -1,16 +1,23 @@
 /**
- * Experiments Routes
+ * Experiments Routes - Complete with Binary Data Integration
  * Converts C# WebApi/Controllers/Core/ExperimentsController.cs to Express routes
+ * Enhanced with binary oscilloscope data endpoints
  */
 
 const express = require('express');
 const router = express.Router();
 const ExperimentRepository = require('../repositories/ExperimentRepository');
 const StartupService = require('../services/StartupService');
+const BinaryParserService = require('../services/BinaryParserService');
 const { responseMiddleware } = require('../models/ApiResponse');
 
 // Apply response middleware to all routes in this router
 router.use(responseMiddleware);
+
+// Initialize services
+const binaryService = new BinaryParserService();
+
+// ===== EXISTING EXPERIMENT ROUTES =====
 
 /**
  * GET /api/experiments/count
@@ -37,6 +44,13 @@ router.get('/status', async (req, res) => {
         const statusResult = await startupService.getServiceStatus();
 
         if (statusResult.success) {
+            // Add binary service status
+            const binaryCacheStatus = binaryService.getCacheStatus();
+            statusResult.status.binaryParserService = {
+                cachedExperiments: binaryCacheStatus.totalCachedExperiments,
+                cacheTimeout: binaryCacheStatus.cacheTimeoutMs
+            };
+            
             res.success(statusResult.status);
         } else {
             res.error(statusResult.error, 500);
@@ -88,6 +102,11 @@ router.post('/rescan', async (req, res) => {
         if (success) {
             const repository = new ExperimentRepository();
             const count = await repository.getExperimentCountAsync();
+            
+            // Clear binary parser cache after rescan
+            if (forceRefreshBool) {
+                binaryService.clearAllCache();
+            }
             
             res.success({
                 message,
@@ -214,6 +233,346 @@ router.get('/:experimentId', async (req, res) => {
     } catch (error) {
         console.error(`Error in GET /api/experiments/${req.params.experimentId}:`, error);
         res.error(error.message, 500);
+    }
+});
+
+// ===== NEW BINARY DATA ROUTES =====
+
+/**
+ * GET /api/experiments/:experimentId/bin-metadata
+ * Get binary file metadata and channel information
+ */
+router.get('/:experimentId/bin-metadata', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { forceRefresh = false } = req.query;
+        const forceRefreshBool = forceRefresh === 'true' || forceRefresh === true;
+
+        console.log(`Getting binary metadata for experiment: ${experimentId}`);
+
+        // Check if experiment has binary file
+        const hasBinary = await binaryService.hasBinaryFile(experimentId);
+        if (!hasBinary) {
+            return res.error(`No binary file found for experiment ${experimentId}`, 404);
+        }
+
+        // Get comprehensive metadata
+        const metadataResult = await binaryService.getBinaryMetadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        res.success({
+            experimentId: experimentId,
+            hasValidBinaryFile: true,
+            ...metadataResult
+        });
+
+    } catch (error) {
+        console.error(`Error getting binary metadata for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get binary metadata: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/bin-data/:channelId
+ * Get single channel data with resampling
+ */
+router.get('/:experimentId/bin-data/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+        const { 
+            start = 0, 
+            end = null, 
+            maxPoints = 2000 
+        } = req.query;
+
+        const startTime = parseFloat(start);
+        const endTime = end ? parseFloat(end) : null;
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters
+        if (isNaN(startTime) || startTime < 0) {
+            return res.error('Invalid start time parameter', 400);
+        }
+        
+        if (endTime !== null && (isNaN(endTime) || endTime <= startTime)) {
+            return res.error('Invalid end time parameter', 400);
+        }
+        
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
+            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
+        }
+
+        // Get channel data
+        const channelResult = await binaryService.getChannelData(experimentId, channelId, {
+            startTime: startTime,
+            endTime: endTime,
+            maxPoints: maxPointsInt
+        });
+
+        if (!channelResult.success) {
+            return res.error(channelResult.error, channelResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(channelResult);
+
+    } catch (error) {
+        console.error(`Error getting channel data for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/:experimentId/bin-data/bulk
+ * Get multiple channels data efficiently
+ */
+router.post('/:experimentId/bin-data/bulk', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { 
+            channelIds, 
+            startTime = 0, 
+            endTime = null, 
+            maxPoints = 2000 
+        } = req.body;
+
+        // Validate request body
+        if (!Array.isArray(channelIds)) {
+            return res.error('channelIds must be an array', 400);
+        }
+
+        if (channelIds.length === 0) {
+            return res.error('channelIds cannot be empty', 400);
+        }
+
+        if (channelIds.length > 20) {
+            return res.error('Maximum 20 channels per request', 400);
+        }
+
+        const startTimeFloat = parseFloat(startTime);
+        const endTimeFloat = endTime ? parseFloat(endTime) : null;
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters
+        if (isNaN(startTimeFloat) || startTimeFloat < 0) {
+            return res.error('Invalid startTime parameter', 400);
+        }
+        
+        if (endTimeFloat !== null && (isNaN(endTimeFloat) || endTimeFloat <= startTimeFloat)) {
+            return res.error('Invalid endTime parameter', 400);
+        }
+        
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
+            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
+        }
+
+        console.log(`Bulk channel request for ${experimentId}: ${channelIds.length} channels`);
+
+        // Get bulk channel data
+        const bulkResult = await binaryService.getBulkChannelData(experimentId, channelIds, {
+            startTime: startTimeFloat,
+            endTime: endTimeFloat,
+            maxPoints: maxPointsInt
+        });
+
+        if (!bulkResult.success) {
+            return res.error(bulkResult.error, 500);
+        }
+
+        res.success(bulkResult);
+
+    } catch (error) {
+        console.error(`Error getting bulk channel data for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get bulk channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/bin-stats/:channelId
+ * Get channel statistics
+ */
+router.get('/:experimentId/bin-stats/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+
+        console.log(`Getting channel statistics for ${experimentId}/${channelId}`);
+
+        // Get channel statistics
+        const statsResult = await binaryService.getChannelStatistics(experimentId, channelId);
+
+        if (!statsResult.success) {
+            return res.error(statsResult.error, statsResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(statsResult);
+
+    } catch (error) {
+        console.error(`Error getting channel statistics for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get channel statistics: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/bin-channels
+ * Get available channels information
+ */
+router.get('/:experimentId/bin-channels', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Getting available channels for experiment: ${experimentId}`);
+
+        // Get metadata which includes channel information
+        const metadataResult = await binaryService.getBinaryMetadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        // Extract channel information
+        const channelsInfo = {
+            experimentId: experimentId,
+            available: metadataResult.channels.available,
+            byUnit: metadataResult.channels.byUnit,
+            defaults: metadataResult.channels.defaults,
+            ranges: metadataResult.channels.ranges,
+            timeRange: metadataResult.timeRange,
+            summary: {
+                rawChannelCount: metadataResult.channels.available.raw.length,
+                calculatedChannelCount: metadataResult.channels.available.calculated.length,
+                totalChannels: metadataResult.channels.available.raw.length + 
+                              metadataResult.channels.available.calculated.length,
+                duration: metadataResult.duration,
+                samplingRate: metadataResult.samplingRate
+            }
+        };
+
+        res.success(channelsInfo);
+
+    } catch (error) {
+        console.error(`Error getting channels info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get channels information: ${error.message}`, 500);
+    }
+});
+
+/**
+ * DELETE /api/experiments/:experimentId/bin-cache
+ * Clear cached binary data for experiment
+ */
+router.delete('/:experimentId/bin-cache', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Clearing binary cache for experiment: ${experimentId}`);
+
+        binaryService.clearCache(experimentId);
+
+        res.success({
+            message: `Cache cleared for experiment ${experimentId}`,
+            experimentId: experimentId,
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error clearing cache for ${req.params.experimentId}:`, error);
+        res.error(`Failed to clear cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/bin-service/status
+ * Get binary parser service status and cache information
+ */
+router.get('/bin-service/status', async (req, res) => {
+    try {
+        const cacheStatus = binaryService.getCacheStatus();
+        
+        res.success({
+            serviceName: 'Binary Parser Service',
+            status: 'active',
+            cache: cacheStatus,
+            capabilities: {
+                supportedChannels: {
+                    raw: 'channel_0 to channel_7 (8 channels)',
+                    calculated: 'calc_0 to calc_6 (7 channels)'
+                },
+                supportedFormats: ['C# BinaryWriter format'],
+                maxFileSize: '2GB',
+                resamplingAlgorithm: 'MinMax-LTTB with spike preservation',
+                caching: 'In-memory with TTL'
+            },
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error getting binary service status:', error);
+        res.error(`Failed to get service status: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/bin-service/clear-all-cache
+ * Clear all cached binary data
+ */
+router.post('/bin-service/clear-all-cache', async (req, res) => {
+    try {
+        console.log('Clearing all binary parser cache...');
+
+        binaryService.clearAllCache();
+
+        res.success({
+            message: 'All binary parser cache cleared successfully',
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error clearing all binary cache:', error);
+        res.error(`Failed to clear all cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/bin-file-info
+ * Get binary file information without parsing (quick check)
+ */
+router.get('/:experimentId/bin-file-info', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        // Get file path
+        const filePath = binaryService.getExperimentBinaryFilePath(experimentId);
+        const hasFile = await binaryService.hasBinaryFile(experimentId);
+
+        if (!hasFile) {
+            return res.success({
+                experimentId: experimentId,
+                hasFile: false,
+                expectedPath: filePath,
+                message: 'Binary file not found'
+            });
+        }
+
+        // Get basic file information
+        const fs = require('fs').promises;
+        const path = require('path');
+        const stats = await fs.stat(filePath);
+
+        res.success({
+            experimentId: experimentId,
+            hasFile: true,
+            filePath: filePath,
+            fileName: path.basename(filePath),
+            fileSize: stats.size,
+            fileSizeMB: (stats.size / 1024 / 1024).toFixed(1),
+            lastModified: stats.mtime,
+            created: stats.birthtime
+        });
+
+    } catch (error) {
+        console.error(`Error getting file info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get file information: ${error.message}`, 500);
     }
 });
 

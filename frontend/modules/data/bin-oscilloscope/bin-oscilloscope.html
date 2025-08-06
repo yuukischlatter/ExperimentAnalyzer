@@ -1,0 +1,41 @@
+<!-- Binary Oscilloscope Module Template -->
+<div class="bin-oscilloscope-container">
+    
+    <!-- Module Header (matches experiment-browser pattern) -->
+    <div class="bin-oscilloscope-header card-header">
+        <div class="flex items-center justify-between">
+            <div class="bin-oscilloscope-title">
+                <h3 class="card-title">Binary Oscilloscope Data</h3>
+                <p class="text-sm text-secondary" data-bind="experimentInfo">Engineering measurement channels</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Module Content -->
+    <div class="bin-oscilloscope-content">
+        
+        <!-- Loading State (reuse existing pattern) -->
+        <div data-bind="loadingSpinner" class="loading-state hidden">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <p>Loading oscilloscope data...</p>
+                <p class="text-sm text-secondary">Processing binary file and computing engineering values</p>
+            </div>
+        </div>
+        
+        <!-- Error State (reuse existing pattern) -->
+        <div data-bind="errorMessage" class="error-state hidden">
+            <div class="error-content">
+                <h4>Binary Data Not Available</h4>
+                <p data-bind="errorText">No binary oscilloscope file found for this experiment.</p>
+            </div>
+        </div>
+        
+        <!-- Plot Container -->
+        <div data-bind="plotContainer" class="plot-container hidden">
+            <div data-bind="oscilloscopePlot" id="oscilloscope-plot" class="oscilloscope-plot"></div>
+        </div>
+        
+    </div>
+    
+</div>
