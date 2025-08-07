@@ -1,0 +1,76 @@
+<!-- Tensile Strength Module Template - Materials Testing with 3 Individual Plots -->
+<div class="tensile-strength-container">
+    
+    <!-- Module Header (standardized structure for folding) -->
+    <div class="tensile-strength-header card-header">
+        <div class="flex items-center justify-between">
+            <div class="tensile-strength-title">
+                <h3 class="card-title">Tensile Strength Testing</h3>
+                <p class="text-sm text-secondary" data-bind="experimentInfo">Rail tensile testing with force and displacement analysis</p>
+            </div>
+            <!-- Fold arrow will be inserted here by folding script -->
+        </div>
+    </div>
+    
+    <!-- Module Content -->
+    <div class="tensile-strength-content">
+        
+        <!-- Loading State -->
+        <div data-bind="loadingSpinner" class="loading-state hidden">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <p>Loading tensile testing data...</p>
+                <p class="text-sm text-secondary">Processing coordinate pairs and test metadata</p>
+            </div>
+        </div>
+        
+        <!-- Error State -->
+        <div data-bind="errorMessage" class="error-state hidden">
+            <div class="error-content">
+                <h4>Tensile Testing Data Not Available</h4>
+                <p data-bind="errorText">No tensile CSV file found for this experiment.</p>
+                <p class="text-xs text-muted">Expected file patterns: *redalsa.csv or {experimentId}*.csv</p>
+            </div>
+        </div>
+        
+        <!-- Three Plot Layout Container -->
+        <div data-bind="plotsContainer" class="plots-container hidden">
+            
+            <!-- Plot 1: Force vs Displacement (Primary Materials Testing Plot) -->
+            <div class="plot-section">
+                <div class="plot-header">
+                    <h4 class="plot-title">Force vs Displacement Curve</h4>
+                    <p class="plot-description">Primary materials testing relationship showing yield and ultimate strength</p>
+                </div>
+                <div class="plot-wrapper">
+                    <div data-bind="forceDisplacementPlot" id="force-displacement-plot" class="tensile-plot"></div>
+                </div>
+            </div>
+            
+            <!-- Plot 2: Force vs Time -->
+            <div class="plot-section">
+                <div class="plot-header">
+                    <h4 class="plot-title">Force Development Over Time</h4>
+                    <p class="plot-description">Force progression during the tensile test</p>
+                </div>
+                <div class="plot-wrapper">
+                    <div data-bind="forceTimePlot" id="force-time-plot" class="tensile-plot"></div>
+                </div>
+            </div>
+            
+            <!-- Plot 3: Displacement vs Time -->
+            <div class="plot-section">
+                <div class="plot-header">
+                    <h4 class="plot-title">Displacement Over Time</h4>
+                    <p class="plot-description">Material elongation progression during the test</p>
+                </div>
+                <div class="plot-wrapper">
+                    <div data-bind="displacementTimePlot" id="displacement-time-plot" class="tensile-plot"></div>
+                </div>
+            </div>
+                        
+        </div>
+        
+    </div>
+    
+</div>

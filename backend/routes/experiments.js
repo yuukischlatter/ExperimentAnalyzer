@@ -12,6 +12,7 @@ const BinaryParserService = require('../services/BinaryParserService');
 const TemperatureCsvService = require('../services/TemperatureCsvService');
 const PositionCsvService = require('../services/PositionCsvService');
 const AccelerationCsvService = require('../services/AccelerationCsvService');
+const TensileCsvService = require('../services/TensileCsvService');
 const { responseMiddleware } = require('../models/ApiResponse');
 
 // Apply response middleware to all routes in this router
@@ -22,6 +23,7 @@ const binaryService = new BinaryParserService();
 const temperatureService = new TemperatureCsvService();
 const positionService = new PositionCsvService();
 const accelerationService = new AccelerationCsvService();
+const tensileService = new TensileCsvService();
 
 // #region EXISTING EXPERIMENT ROUTES
 
@@ -77,6 +79,13 @@ router.get('/status', async (req, res) => {
                 cachedExperiments: accelerationCacheStatus.totalCachedExperiments,
                 cacheTimeout: accelerationCacheStatus.cacheTimeoutMs
             };
+
+            // Add tensile service status
+            const tensileCacheStatus = tensileService.getCacheStatus(); // ADD THESE LINES
+            statusResult.status.tensileCsvService = {                   // ADD THESE LINES
+                cachedExperiments: tensileCacheStatus.totalCachedExperiments,
+                cacheTimeout: tensileCacheStatus.cacheTimeoutMs
+            };   
             
             res.success(statusResult.status);
         } else {
@@ -136,6 +145,7 @@ router.post('/rescan', async (req, res) => {
                 temperatureService.clearAllCache();
                 positionService.clearAllCache();
                 accelerationService.clearAllCache();
+                tensileService.clearAllCache();
             }
             
             res.success({
@@ -1701,6 +1711,399 @@ router.get('/:experimentId/acc-file-info', async (req, res) => {
     } catch (error) {
         console.error(`Error getting acceleration file info for ${req.params.experimentId}:`, error);
         res.error(`Failed to get acceleration file information: ${error.message}`, 500);
+    }
+});
+
+// #endregion
+
+// #region TENSILE CSV DATA ROUTES
+
+/**
+ * GET /api/experiments/:experimentId/tensile-metadata
+ * Get tensile CSV file metadata and channel information
+ */
+router.get('/:experimentId/tensile-metadata', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { forceRefresh = false } = req.query;
+        const forceRefreshBool = forceRefresh === 'true' || forceRefresh === true;
+
+        console.log(`Getting tensile metadata for experiment: ${experimentId}`);
+
+        // Check if experiment has tensile file
+        const hasTensile = await tensileService.hasTensileFile(experimentId);
+        if (!hasTensile) {
+            return res.error(`No tensile CSV file found for experiment ${experimentId}`, 404);
+        }
+
+        // Get comprehensive metadata
+        const metadataResult = await tensileService.getTensileMetadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        res.success({
+            experimentId: experimentId,
+            hasValidTensileFile: true,
+            ...metadataResult
+        });
+
+    } catch (error) {
+        console.error(`Error getting tensile metadata for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get tensile metadata: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/tensile-data/:channelId
+ * Get single tensile channel data with resampling
+ * Supports: force_kN, displacement_mm, force_vs_displacement
+ */
+router.get('/:experimentId/tensile-data/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+        const { 
+            start = 0, 
+            end = null, 
+            maxPoints = 2000 
+        } = req.query;
+
+        const startTime = parseFloat(start);
+        const endTime = end ? parseFloat(end) : null;
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters for time-series channels
+        if (channelId !== 'force_vs_displacement') {
+            if (isNaN(startTime) || startTime < 0) {
+                return res.error('Invalid start time parameter', 400);
+            }
+            
+            if (endTime !== null && (isNaN(endTime) || endTime <= startTime)) {
+                return res.error('Invalid end time parameter', 400);
+            }
+        }
+        
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
+            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
+        }
+
+        // Validate channel ID
+        const validChannels = ['force_kN', 'displacement_mm', 'force_vs_displacement'];
+        if (!validChannels.includes(channelId)) {
+            return res.error(`Invalid channel ID: ${channelId}. Supported channels: ${validChannels.join(', ')}`, 400);
+        }
+
+        // Get channel data
+        const channelResult = await tensileService.getChannelData(experimentId, channelId, {
+            startTime: startTime,
+            endTime: endTime,
+            maxPoints: maxPointsInt
+        });
+
+        if (!channelResult.success) {
+            return res.error(channelResult.error, channelResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(channelResult);
+
+    } catch (error) {
+        console.error(`Error getting tensile channel data for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get tensile channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/:experimentId/tensile-data/bulk
+ * Get multiple tensile channels data efficiently
+ */
+router.post('/:experimentId/tensile-data/bulk', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { 
+            channelIds, 
+            startTime = 0, 
+            endTime = null, 
+            maxPoints = 2000 
+        } = req.body;
+
+        // Validate request body
+        if (!Array.isArray(channelIds)) {
+            return res.error('channelIds must be an array', 400);
+        }
+
+        if (channelIds.length === 0) {
+            return res.error('channelIds cannot be empty', 400);
+        }
+
+        if (channelIds.length > 10) {
+            return res.error('Maximum 10 channels per request', 400);
+        }
+
+        // Validate channel IDs
+        const validChannels = ['force_kN', 'displacement_mm', 'force_vs_displacement'];
+        const invalidChannels = channelIds.filter(id => !validChannels.includes(id));
+        if (invalidChannels.length > 0) {
+            return res.error(`Invalid channel IDs: ${invalidChannels.join(', ')}. Supported channels: ${validChannels.join(', ')}`, 400);
+        }
+
+        const startTimeFloat = parseFloat(startTime);
+        const endTimeFloat = endTime ? parseFloat(endTime) : null;
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters for time-series channels
+        const hasTimeSeriesChannels = channelIds.some(id => id !== 'force_vs_displacement');
+        if (hasTimeSeriesChannels) {
+            if (isNaN(startTimeFloat) || startTimeFloat < 0) {
+                return res.error('Invalid startTime parameter', 400);
+            }
+            
+            if (endTimeFloat !== null && (isNaN(endTimeFloat) || endTimeFloat <= startTimeFloat)) {
+                return res.error('Invalid endTime parameter', 400);
+            }
+        }
+        
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
+            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
+        }
+
+        console.log(`Bulk tensile channel request for ${experimentId}: ${channelIds.length} channels`);
+
+        // Get bulk channel data
+        const bulkResult = await tensileService.getBulkChannelData(experimentId, channelIds, {
+            startTime: startTimeFloat,
+            endTime: endTimeFloat,
+            maxPoints: maxPointsInt
+        });
+
+        if (!bulkResult.success) {
+            return res.error(bulkResult.error, 500);
+        }
+
+        res.success(bulkResult);
+
+    } catch (error) {
+        console.error(`Error getting bulk tensile channel data for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get bulk tensile channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/tensile-stats/:channelId
+ * Get tensile channel statistics
+ */
+router.get('/:experimentId/tensile-stats/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+
+        console.log(`Getting tensile channel statistics for ${experimentId}/${channelId}`);
+
+        // Validate channel ID
+        const validChannels = ['force_kN', 'displacement_mm', 'force_vs_displacement'];
+        if (!validChannels.includes(channelId)) {
+            return res.error(`Invalid channel ID: ${channelId}. Supported channels: ${validChannels.join(', ')}`, 400);
+        }
+
+        // Get channel statistics
+        const statsResult = await tensileService.getChannelStatistics(experimentId, channelId);
+
+        if (!statsResult.success) {
+            return res.error(statsResult.error, statsResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(statsResult);
+
+    } catch (error) {
+        console.error(`Error getting tensile channel statistics for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get tensile channel statistics: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/tensile-channels
+ * Get available tensile channels information
+ */
+router.get('/:experimentId/tensile-channels', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Getting available tensile channels for experiment: ${experimentId}`);
+
+        // Get metadata which includes channel information
+        const metadataResult = await tensileService.getTensileMetadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        // Extract channel information
+        const channelsInfo = {
+            experimentId: experimentId,
+            available: metadataResult.channels.available,
+            byUnit: metadataResult.channels.byUnit,
+            defaults: metadataResult.channels.defaults,
+            ranges: metadataResult.channels.ranges,
+            timeRange: metadataResult.timeRange,
+            summary: {
+                timeSeriesChannelCount: metadataResult.channels.available.timeSeries.length,
+                xyRelationshipChannelCount: metadataResult.channels.available.xyRelationship.length,
+                totalChannels: metadataResult.channels.available.timeSeries.length + 
+                              metadataResult.channels.available.xyRelationship.length,
+                duration: metadataResult.duration,
+                testMetadata: metadataResult.testMetadata
+            }
+        };
+
+        res.success(channelsInfo);
+
+    } catch (error) {
+        console.error(`Error getting tensile channels info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get tensile channels information: ${error.message}`, 500);
+    }
+});
+
+/**
+ * DELETE /api/experiments/:experimentId/tensile-cache
+ * Clear cached tensile data for experiment
+ */
+router.delete('/:experimentId/tensile-cache', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Clearing tensile cache for experiment: ${experimentId}`);
+
+        tensileService.clearCache(experimentId);
+
+        res.success({
+            message: `Tensile cache cleared for experiment ${experimentId}`,
+            experimentId: experimentId,
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error clearing tensile cache for ${req.params.experimentId}:`, error);
+        res.error(`Failed to clear tensile cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/tensile-service/status
+ * Get tensile CSV service status and cache information
+ */
+router.get('/tensile-service/status', async (req, res) => {
+    try {
+        const cacheStatus = tensileService.getCacheStatus();
+        
+        res.success({
+            serviceName: 'Tensile CSV Service',
+            status: 'active',
+            cache: cacheStatus,
+            capabilities: {
+                supportedChannels: {
+                    timeSeries: 'force_kN, displacement_mm (Force and Displacement over time)',
+                    xyRelationship: 'force_vs_displacement (Force vs Displacement curve)'
+                },
+                supportedFormats: ['Multi-section semicolon-delimited CSV with coordinate pairs'],
+                filePatterns: [
+                    '*redalsa.csv (legacy format)',
+                    '{experimentId}*.csv (new format, excluding other types)'
+                ],
+                dataProcessing: {
+                    coordinateFormat: '{X=value, Y=value}',
+                    sections: ['metadata_header', 'empty_separator', 'data_headers', 'coordinate_data'],
+                    units: 'Force: kN, Displacement: mm, Time: s',
+                    specialFeatures: 'Materials testing metadata, German datetime parsing'
+                },
+                maxFileSize: '10MB',
+                resamplingAlgorithm: 'Simple decimation with feature preservation',
+                caching: 'In-memory with TTL'
+            },
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error getting tensile service status:', error);
+        res.error(`Failed to get tensile service status: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/tensile-service/clear-all-cache
+ * Clear all cached tensile data
+ */
+router.post('/tensile-service/clear-all-cache', async (req, res) => {
+    try {
+        console.log('Clearing all tensile CSV cache...');
+
+        tensileService.clearAllCache();
+
+        res.success({
+            message: 'All tensile CSV cache cleared successfully',
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error clearing all tensile cache:', error);
+        res.error(`Failed to clear all tensile cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/tensile-file-info
+ * Get tensile file information without parsing (quick check)
+ */
+router.get('/:experimentId/tensile-file-info', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        // Get actual file path by scanning directory
+        const filePath = await tensileService.getActualTensileFilePath(experimentId);
+        const hasFile = await tensileService.hasTensileFile(experimentId);
+
+        if (!hasFile || !filePath) {
+            return res.success({
+                experimentId: experimentId,
+                hasFile: false,
+                message: 'Tensile CSV file not found',
+                expectedPatterns: [
+                    '*redalsa.csv (legacy format)',
+                    `${experimentId.toLowerCase()}*.csv (new format)`
+                ]
+            });
+        }
+
+        // Get basic file information
+        const fs = require('fs').promises;
+        const path = require('path');
+        const stats = await fs.stat(filePath);
+
+        res.success({
+            experimentId: experimentId,
+            hasFile: true,
+            filePath: filePath,
+            fileName: path.basename(filePath),
+            fileSize: stats.size,
+            fileSizeMB: (stats.size / 1024 / 1024).toFixed(1),
+            lastModified: stats.mtime,
+            created: stats.birthtime,
+            tensileInfo: {
+                testType: 'Rail Tensile Testing',
+                expectedChannels: ['Force (kN)', 'Displacement (mm)', 'Force vs Displacement'],
+                supportedFormats: [
+                    'Multi-section CSV: metadata + coordinate pairs',
+                    'Format: {X=value, Y=value}'
+                ],
+                dataColumns: ['FORCE/WAY DATA', 'FORCE/TIME DATA', 'WAY/TIME DATA'],
+                filePatterns: {
+                    legacy: '*redalsa.csv',
+                    new: `${experimentId}*.csv`
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error(`Error getting tensile file info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get tensile file information: ${error.message}`, 500);
     }
 });
 

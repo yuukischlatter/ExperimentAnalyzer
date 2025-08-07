@@ -329,7 +329,7 @@ class ExperimentAnalyzer {
             'hasBinFile': 'bin-oscilloscope',
             'hasAccelerationCsv': 'acceleration',
             'hasPositionCsv': 'distance-sensor',
-            //'hasTensileCsv': 'tensile-strength',
+            'hasTensileCsv': 'tensile-strength',
             //'hasPhotos': 'photo-gallery',
             //'hasThermalRavi': 'thermal-ir',
             //'hasTcp5File': 'tcp5-oscilloscope',
