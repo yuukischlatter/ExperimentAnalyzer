@@ -1,7 +1,7 @@
 /**
- * Experiments Routes - Complete with Binary Data Integration + Temperature CSV Integration
+ * Experiments Routes - Complete with Binary Data + Temperature CSV + Position CSV Integration
  * Converts C# WebApi/Controllers/Core/ExperimentsController.cs to Express routes
- * Enhanced with binary oscilloscope data endpoints and temperature CSV endpoints
+ * Enhanced with binary oscilloscope data endpoints, temperature CSV endpoints, and position CSV endpoints
  */
 
 const express = require('express');
@@ -10,6 +10,7 @@ const ExperimentRepository = require('../repositories/ExperimentRepository');
 const StartupService = require('../services/StartupService');
 const BinaryParserService = require('../services/BinaryParserService');
 const TemperatureCsvService = require('../services/TemperatureCsvService');
+const PositionCsvService = require('../services/PositionCsvService');
 const { responseMiddleware } = require('../models/ApiResponse');
 
 // Apply response middleware to all routes in this router
@@ -18,8 +19,9 @@ router.use(responseMiddleware);
 // Initialize services
 const binaryService = new BinaryParserService();
 const temperatureService = new TemperatureCsvService();
+const positionService = new PositionCsvService();
 
-// ===== EXISTING EXPERIMENT ROUTES =====
+// #region EXISTING EXPERIMENT ROUTES
 
 /**
  * GET /api/experiments/count
@@ -58,6 +60,13 @@ router.get('/status', async (req, res) => {
             statusResult.status.temperatureCsvService = {
                 cachedExperiments: temperatureCacheStatus.totalCachedExperiments,
                 cacheTimeout: temperatureCacheStatus.cacheTimeoutMs
+            };
+            
+            // Add position service status
+            const positionCacheStatus = positionService.getCacheStatus();
+            statusResult.status.positionCsvService = {
+                cachedExperiments: positionCacheStatus.totalCachedExperiments,
+                cacheTimeout: positionCacheStatus.cacheTimeoutMs
             };
             
             res.success(statusResult.status);
@@ -112,10 +121,11 @@ router.post('/rescan', async (req, res) => {
             const repository = new ExperimentRepository();
             const count = await repository.getExperimentCountAsync();
             
-            // Clear binary parser cache after rescan
+            // Clear all caches after rescan
             if (forceRefreshBool) {
                 binaryService.clearAllCache();
                 temperatureService.clearAllCache();
+                positionService.clearAllCache();
             }
             
             res.success({
@@ -246,7 +256,9 @@ router.get('/:experimentId', async (req, res) => {
     }
 });
 
-// ===== BINARY DATA ROUTES =====
+// #endregion
+
+// #region BINARY DATA ROUTES
 
 /**
  * GET /api/experiments/:experimentId/bin-metadata
@@ -586,7 +598,9 @@ router.get('/:experimentId/bin-file-info', async (req, res) => {
     }
 });
 
-// ===== TEMPERATURE CSV DATA ROUTES =====
+// #endregion
+
+// #region TEMPERATURE CSV DATA ROUTES
 
 /**
  * GET /api/experiments/:experimentId/temp-metadata
@@ -921,5 +935,375 @@ router.get('/:experimentId/temp-file-info', async (req, res) => {
         res.error(`Failed to get temperature file information: ${error.message}`, 500);
     }
 });
+
+// #endregion
+
+// #region POSITION CSV DATA ROUTES
+
+/**
+ * GET /api/experiments/:experimentId/pos-metadata
+ * Get position CSV file metadata and channel information
+ */
+router.get('/:experimentId/pos-metadata', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { forceRefresh = false } = req.query;
+        const forceRefreshBool = forceRefresh === 'true' || forceRefresh === true;
+
+        console.log(`Getting position metadata for experiment: ${experimentId}`);
+
+        // Check if experiment has position file
+        const hasPosition = await positionService.hasPositionFile(experimentId);
+        if (!hasPosition) {
+            return res.error(`No position CSV file found for experiment ${experimentId}`, 404);
+        }
+
+        // Get comprehensive metadata
+        const metadataResult = await positionService.getPositionMetadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        res.success({
+            experimentId: experimentId,
+            hasValidPositionFile: true,
+            ...metadataResult
+        });
+
+    } catch (error) {
+        console.error(`Error getting position metadata for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get position metadata: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/pos-data/:channelId
+ * Get single position channel data with resampling
+ */
+router.get('/:experimentId/pos-data/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+        const { 
+            start = 0, 
+            end = null, 
+            maxPoints = 2000 
+        } = req.query;
+
+        const startTime = parseFloat(start);
+        const endTime = end ? parseFloat(end) : null;
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters
+        if (isNaN(startTime) || startTime < 0) {
+            return res.error('Invalid start time parameter', 400);
+        }
+        
+        if (endTime !== null && (isNaN(endTime) || endTime <= startTime)) {
+            return res.error('Invalid end time parameter', 400);
+        }
+        
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
+            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
+        }
+
+        // Validate channel ID (should be pos_x)
+        if (channelId !== 'pos_x') {
+            return res.error(`Invalid channel ID: ${channelId}. Position data only supports 'pos_x'`, 400);
+        }
+
+        // Get channel data
+        const channelResult = await positionService.getChannelData(experimentId, channelId, {
+            startTime: startTime,
+            endTime: endTime,
+            maxPoints: maxPointsInt
+        });
+
+        if (!channelResult.success) {
+            return res.error(channelResult.error, channelResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(channelResult);
+
+    } catch (error) {
+        console.error(`Error getting position channel data for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get position channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/:experimentId/pos-data/bulk
+ * Get multiple position channels data efficiently (simplified for single channel)
+ */
+router.post('/:experimentId/pos-data/bulk', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { 
+            channelIds, 
+            startTime = 0, 
+            endTime = null, 
+            maxPoints = 2000 
+        } = req.body;
+
+        // Validate request body
+        if (!Array.isArray(channelIds)) {
+            return res.error('channelIds must be an array', 400);
+        }
+
+        if (channelIds.length === 0) {
+            return res.error('channelIds cannot be empty', 400);
+        }
+
+        if (channelIds.length > 5) {
+            return res.error('Maximum 5 channels per request (position data has only pos_x)', 400);
+        }
+
+        // Validate that only pos_x is requested
+        const invalidChannels = channelIds.filter(id => id !== 'pos_x');
+        if (invalidChannels.length > 0) {
+            return res.error(`Invalid channel IDs: ${invalidChannels.join(', ')}. Position data only supports 'pos_x'`, 400);
+        }
+
+        const startTimeFloat = parseFloat(startTime);
+        const endTimeFloat = endTime ? parseFloat(endTime) : null;
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters
+        if (isNaN(startTimeFloat) || startTimeFloat < 0) {
+            return res.error('Invalid startTime parameter', 400);
+        }
+        
+        if (endTimeFloat !== null && (isNaN(endTimeFloat) || endTimeFloat <= startTimeFloat)) {
+            return res.error('Invalid endTime parameter', 400);
+        }
+        
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
+            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
+        }
+
+        console.log(`Bulk position channel request for ${experimentId}: ${channelIds.length} channels`);
+
+        // Get bulk channel data
+        const bulkResult = await positionService.getBulkChannelData(experimentId, channelIds, {
+            startTime: startTimeFloat,
+            endTime: endTimeFloat,
+            maxPoints: maxPointsInt
+        });
+
+        if (!bulkResult.success) {
+            return res.error(bulkResult.error, 500);
+        }
+
+        res.success(bulkResult);
+
+    } catch (error) {
+        console.error(`Error getting bulk position channel data for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get bulk position channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/pos-stats/:channelId
+ * Get position channel statistics
+ */
+router.get('/:experimentId/pos-stats/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+
+        console.log(`Getting position channel statistics for ${experimentId}/${channelId}`);
+
+        // Validate channel ID
+        if (channelId !== 'pos_x') {
+            return res.error(`Invalid channel ID: ${channelId}. Position data only supports 'pos_x'`, 400);
+        }
+
+        // Get channel statistics
+        const statsResult = await positionService.getChannelStatistics(experimentId, channelId);
+
+        if (!statsResult.success) {
+            return res.error(statsResult.error, statsResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(statsResult);
+
+    } catch (error) {
+        console.error(`Error getting position channel statistics for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get position channel statistics: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/pos-channels
+ * Get available position channels information
+ */
+router.get('/:experimentId/pos-channels', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Getting available position channels for experiment: ${experimentId}`);
+
+        // Get metadata which includes channel information
+        const metadataResult = await positionService.getPositionMetadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        // Extract channel information
+        const channelsInfo = {
+            experimentId: experimentId,
+            available: metadataResult.channels.available,
+            byUnit: metadataResult.channels.byUnit,
+            defaults: metadataResult.channels.defaults,
+            ranges: metadataResult.channels.ranges,
+            timeRange: metadataResult.timeRange,
+            summary: {
+                positionChannelCount: metadataResult.channels.available.position.length,
+                totalChannels: metadataResult.channels.available.position.length,
+                duration: metadataResult.duration,
+                sensorInfo: metadataResult.positionInfo
+            }
+        };
+
+        res.success(channelsInfo);
+
+    } catch (error) {
+        console.error(`Error getting position channels info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get position channels information: ${error.message}`, 500);
+    }
+});
+
+/**
+ * DELETE /api/experiments/:experimentId/pos-cache
+ * Clear cached position data for experiment
+ */
+router.delete('/:experimentId/pos-cache', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Clearing position cache for experiment: ${experimentId}`);
+
+        positionService.clearCache(experimentId);
+
+        res.success({
+            message: `Position cache cleared for experiment ${experimentId}`,
+            experimentId: experimentId,
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error clearing position cache for ${req.params.experimentId}:`, error);
+        res.error(`Failed to clear position cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/pos-service/status
+ * Get position CSV service status and cache information
+ */
+router.get('/pos-service/status', async (req, res) => {
+    try {
+        const cacheStatus = positionService.getCacheStatus();
+        
+        res.success({
+            serviceName: 'Position CSV Service',
+            status: 'active',
+            cache: cacheStatus,
+            capabilities: {
+                supportedChannels: {
+                    position: 'pos_x (Position X-axis in mm)'
+                },
+                supportedFormats: ['Tab-delimited CSV with microsecond timestamps'],
+                sensorType: 'optoNCDT-ILD1220 laser displacement sensor',
+                dataProcessing: {
+                    transformation: 'final = -1 * raw + 49.73',
+                    interpolation: '1ms intervals (1000µs)',
+                    units: 'millimeters (mm)',
+                    timeBase: 'microseconds (µs)'
+                },
+                maxFileSize: '50MB',
+                resamplingAlgorithm: 'Min-Max with spike preservation',
+                caching: 'In-memory with TTL'
+            },
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error getting position service status:', error);
+        res.error(`Failed to get position service status: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/pos-service/clear-all-cache
+ * Clear all cached position data
+ */
+router.post('/pos-service/clear-all-cache', async (req, res) => {
+    try {
+        console.log('Clearing all position CSV cache...');
+
+        positionService.clearAllCache();
+
+        res.success({
+            message: 'All position CSV cache cleared successfully',
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error clearing all position cache:', error);
+        res.error(`Failed to clear all position cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/pos-file-info
+ * Get position file information without parsing (quick check)
+ */
+router.get('/:experimentId/pos-file-info', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        // Get actual file path by scanning directory
+        const filePath = await positionService.getActualPositionFilePath(experimentId);
+        const hasFile = await positionService.hasPositionFile(experimentId);
+
+        if (!hasFile || !filePath) {
+            return res.success({
+                experimentId: experimentId,
+                hasFile: false,
+                message: 'Position CSV file not found',
+                expectedPattern: 'snapshot_optoNCDT-*.csv'
+            });
+        }
+
+        // Get basic file information
+        const fs = require('fs').promises;
+        const path = require('path');
+        const stats = await fs.stat(filePath);
+
+        res.success({
+            experimentId: experimentId,
+            hasFile: true,
+            filePath: filePath,
+            fileName: path.basename(filePath),
+            fileSize: stats.size,
+            fileSizeMB: (stats.size / 1024 / 1024).toFixed(1),
+            lastModified: stats.mtime,
+            created: stats.birthtime,
+            sensorInfo: {
+                type: 'optoNCDT-ILD1220',
+                manufacturer: 'Micro-Epsilon',
+                measurementType: 'Laser displacement',
+                expectedFormat: 'Tab-delimited CSV with datetime, unix_time, position'
+            }
+        });
+
+    } catch (error) {
+        console.error(`Error getting position file info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get position file information: ${error.message}`, 500);
+    }
+});
+
+// #endregion
 
 module.exports = router;

@@ -328,7 +328,7 @@ class ExperimentAnalyzer {
         const moduleMap = {
             'hasBinFile': 'bin-oscilloscope',
             //'hasAccelerationCsv': 'acceleration',
-            //'hasPositionCsv': 'position',
+            'hasPositionCsv': 'distance-sensor',
             //'hasTensileCsv': 'tensile-strength',
             //'hasPhotos': 'photo-gallery',
             //'hasThermalRavi': 'thermal-ir',

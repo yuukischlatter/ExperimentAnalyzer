@@ -1,0 +1,43 @@
+<!-- Distance Sensor Module Template - Position Data -->
+<div class="distance-sensor-container">
+    
+    <!-- Module Header (standardized structure for folding) -->
+    <div class="distance-sensor-header card-header">
+        <div class="flex items-center justify-between">
+            <div class="distance-sensor-title">
+                <h3 class="card-title">Distance Sensor Data</h3>
+                <p class="text-sm text-secondary" data-bind="experimentInfo">Laser displacement measurements during welding process</p>
+            </div>
+            <!-- Fold arrow will be inserted here by folding script -->
+        </div>
+    </div>
+    
+    <!-- Module Content -->
+    <div class="distance-sensor-content">
+        
+        <!-- Loading State -->
+        <div data-bind="loadingSpinner" class="loading-state hidden">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <p>Loading distance sensor data...</p>
+                <p class="text-sm text-secondary">Processing position CSV file and interpolating to 1ms intervals</p>
+            </div>
+        </div>
+        
+        <!-- Error State -->
+        <div data-bind="errorMessage" class="error-state hidden">
+            <div class="error-content">
+                <h4>Distance Sensor Data Not Available</h4>
+                <p data-bind="errorText">No position CSV file found for this experiment.</p>
+                <p class="text-xs text-muted">Expected file pattern: snapshot_optoNCDT-*.csv</p>
+            </div>
+        </div>
+        
+        <!-- Plot Container -->
+        <div data-bind="plotContainer" class="plot-container hidden">
+            <div data-bind="distancePlot" id="distance-plot" class="distance-plot"></div>
+        </div>
+        
+    </div>
+    
+</div>
