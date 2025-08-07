@@ -168,7 +168,7 @@
 }
 
 .acceleration-plot .plotly .modebar-btn path {
-    fill: var(--acceleration-primary) !important;
+    fill: var(--schlatter-blue) !important;
 }
 
 .acceleration-plot .plotly .modebar-btn:hover path {
@@ -192,7 +192,7 @@
 
 .acceleration-plot .ytick text,
 .acceleration-plot .yaxis .axistext {
-    fill: var(--acceleration-primary) !important;
+    fill: var(--schlatter-blue) !important;
 }
 
 .acceleration-plot .legendtext {
@@ -207,8 +207,8 @@
 
 /* === ACCELERATION RGB COLORS === */
 :root {
-    --acceleration-primary: #FF0000;          /* Red for primary acceleration theme */
-    --acceleration-primary-hover: #CC0000;    /* Darker red for hover states */
+    --acceleration-primary: var(--schlatter-blue);          /* Red for primary acceleration theme */
+    --acceleration-primary-hover: var(--schlatter-blue);    /* Darker red for hover states */
     --acceleration-x: #FF0000;                /* Red for X-axis */
     --acceleration-y: #00FF00;                /* Green for Y-axis */
     --acceleration-z: #0000FF;                /* Blue for Z-axis */
