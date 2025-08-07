@@ -1,5 +1,3 @@
-
-
 /* ===================================================================== */
 /* EXPERIMENT-BROWSER.CSS - Desktop Only with Folding Support */
 /* ===================================================================== */
@@ -8,6 +6,7 @@
  * Experiment Browser Module - Styling
  * Desktop-only version with enhanced folding support
  * Professional table design using Schlatter design system
+ * UPDATED: Uses generic .module-content for folding compatibility
  * NO mobile/responsive code
  */
 
@@ -125,7 +124,7 @@
     font-weight: var(--font-medium);
 }
 
-/* === CONTENT SECTION === */
+/* === CONTENT SECTION (UPDATED FOR GENERIC FOLDING) === */
 .experiment-browser-content {
     position: relative;
     min-height: 400px;
@@ -133,7 +132,8 @@
     overflow: hidden;
 }
 
-.foldable-module.collapsed .experiment-browser-content {
+/* Updated to use generic .module-content selector */
+.foldable-module.collapsed .module-content {
     min-height: 0 !important;
     max-height: 0 !important;
     padding: 0 !important;
@@ -448,7 +448,7 @@
         overflow: visible;
     }
     
-    .foldable-module.collapsed .experiment-browser-content {
+    .foldable-module.collapsed .module-content {
         min-height: 400px !important;
         max-height: none !important;
         padding: 0 !important;

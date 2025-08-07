@@ -1,5 +1,3 @@
-
-
 /* ===================================================================== */
 /* AMBIENT-TEMPERATURE.CSS - Desktop Only with Folding Support */
 /* ===================================================================== */
@@ -8,6 +6,7 @@
  * Ambient Temperature Module - Styling
  * Desktop-only version with enhanced folding support
  * Temperature-specific styling with warm color scheme
+ * UPDATED: Uses generic .module-content for folding compatibility
  * NO mobile/responsive code
  */
 
@@ -17,7 +16,6 @@
     border-radius: var(--border-radius);
     box-shadow: var(--shadow-md);
     overflow: hidden;
-    margin-bottom: var(--spacing-lg);
 }
 
 /* === HEADER SECTION === */
@@ -57,7 +55,7 @@
     transform: scale(1.1);
 }
 
-/* === CONTENT SECTION === */
+/* === CONTENT SECTION (UPDATED FOR GENERIC FOLDING) === */
 .ambient-temperature-content {
     position: relative;
     min-height: 600px;
@@ -66,7 +64,8 @@
     overflow: hidden;
 }
 
-.foldable-module.collapsed .ambient-temperature-content {
+/* Updated to use generic .module-content selector */
+.foldable-module.collapsed .module-content {
     min-height: 0 !important;
     max-height: 0 !important;
     padding: 0 !important;
@@ -257,7 +256,7 @@
         display: none !important;
     }
     
-    .foldable-module.collapsed .ambient-temperature-content {
+    .foldable-module.collapsed .module-content {
         min-height: 600px !important;
         max-height: none !important;
         padding: var(--spacing-md) !important;

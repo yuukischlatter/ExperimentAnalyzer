@@ -235,7 +235,6 @@
     background-color: var(--bg-white);
     border-radius: var(--border-radius);
     box-shadow: var(--shadow-sm);
-    min-height: 300px;
     width: 100%; /* Ensure full width */
 }
 
@@ -395,114 +394,140 @@
 </style>
 
 <script>
-// Global Foldable Module Functionality - FIXED VERSION
+// Global Foldable Module Functionality - FIXED TIMING VERSION
 document.addEventListener('DOMContentLoaded', function() {
     
-    // Initialize foldable functionality
-    function initializeFoldableModules() {
+    // Initialize foldable functionality for a specific module
+    function initializeFoldableModule(moduleContainer) {
+        // Skip if already initialized
+        if (moduleContainer.hasAttribute('data-foldable-initialized')) {
+            return;
+        }
+        
+        // Find the header - look for elements with class containing 'header'
+        const header = moduleContainer.querySelector('[class*="-header"]');
+        
+        // Find the content - look for elements with class containing 'content']
+        const content = moduleContainer.querySelector('[class*="-content"]');
+        
+        if (header && content) {
+            // Find the title container - look for elements with class containing 'title'
+            const titleContainer = header.querySelector('[class*="-title"]');
+            
+            if (titleContainer) {
+                // Add fold arrow to title container if it doesn't exist
+                if (!header.querySelector('.fold-arrow')) {
+                    // Create arrow element
+                    const arrowDiv = document.createElement('div');
+                    arrowDiv.className = 'fold-arrow';
+                    arrowDiv.innerHTML = `
+                        <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                        </svg>
+                    `;
+                    
+                    // Find the outer flex container in header and add arrow to it
+                    const flexContainer = header.querySelector('.flex.items-center.justify-between');
+                    if (flexContainer) {
+                        flexContainer.appendChild(arrowDiv);
+                    } else {
+                        // Fallback: add to header directly
+                        header.appendChild(arrowDiv);
+                    }
+                }
+            }
+            
+            // Add module-content class for consistent styling
+            content.classList.add('module-content');
+            
+            // Add click handler to header
+            header.addEventListener('click', function(event) {
+                // Prevent other click handlers from interfering
+                event.stopPropagation();
+                
+                moduleContainer.classList.toggle('collapsed');
+                
+                // Store collapse state in localStorage
+                const moduleId = moduleContainer.id;
+                const isCollapsed = moduleContainer.classList.contains('collapsed');
+                localStorage.setItem(`module-${moduleId}-collapsed`, isCollapsed);
+            });
+            
+            // Restore collapse state from localStorage
+            const moduleId = moduleContainer.id;
+            const wasCollapsed = localStorage.getItem(`module-${moduleId}-collapsed`) === 'true';
+            if (wasCollapsed) {
+                moduleContainer.classList.add('collapsed');
+            }
+            
+            // Mark as initialized
+            moduleContainer.setAttribute('data-foldable-initialized', 'true');
+            
+            console.log(`Folding initialized for module: ${moduleId}`);
+        } else {
+            console.warn(`Could not initialize folding for module: header or content not found`, {
+                moduleId: moduleContainer.id,
+                hasHeader: !!header,
+                hasContent: !!content
+            });
+        }
+    }
+    
+    // Listen for module-ready-for-folding events from app.js
+    document.addEventListener('module:ready-for-folding', function(event) {
+        const { containerId, moduleName } = event.detail;
+        
+        console.log(`Received folding event for module: ${moduleName}, container: ${containerId}`);
+        
+        // Find the container and initialize folding
+        const moduleContainer = document.getElementById(containerId);
+        if (moduleContainer) {
+            // Small delay to ensure DOM is fully updated
+            setTimeout(() => {
+                initializeFoldableModule(moduleContainer);
+            }, 100);
+        } else {
+            console.warn(`Module container not found: ${containerId}`);
+        }
+    });
+    
+    // Also initialize any existing foldable modules (for modules that load immediately)
+    // But only check containers that actually have content
+    function initializeExistingModules() {
         const foldableModules = document.querySelectorAll('.foldable-module');
         
         foldableModules.forEach(moduleContainer => {
-            // Skip if already initialized
-            if (moduleContainer.hasAttribute('data-foldable-initialized')) {
-                return;
-            }
-            
-            // Find the header - look for elements with class containing 'header'
-            const header = moduleContainer.querySelector('[class*="-header"]');
-            
-            // Find the content - look for elements with class containing 'content'
-            const content = moduleContainer.querySelector('[class*="-content"]');
-            
-            if (header && content) {
-                // Find the title container - look for elements with class containing 'title'
-                const titleContainer = header.querySelector('[class*="-title"]');
-                
-                if (titleContainer) {
-                    // Add fold arrow to title container if it doesn't exist
-                    if (!header.querySelector('.fold-arrow')) {
-                        // Create arrow element
-                        const arrowDiv = document.createElement('div');
-                        arrowDiv.className = 'fold-arrow';
-                        arrowDiv.innerHTML = `
-                            <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
-                                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                            </svg>
-                        `;
-                        
-                        // Find the outer flex container in header and add arrow to it
-                        const flexContainer = header.querySelector('.flex.items-center.justify-between');
-                        if (flexContainer) {
-                            flexContainer.appendChild(arrowDiv);
-                        } else {
-                            // Fallback: add to header directly
-                            header.appendChild(arrowDiv);
-                        }
-                    }
-                }
-                
-                // Add module-content class for consistent styling
-                content.classList.add('module-content');
-                
-                // Add click handler to header
-                header.addEventListener('click', function(event) {
-                    // Prevent other click handlers from interfering
-                    event.stopPropagation();
-                    
-                    moduleContainer.classList.toggle('collapsed');
-                    
-                    // Store collapse state in localStorage
-                    const moduleId = moduleContainer.id;
-                    const isCollapsed = moduleContainer.classList.contains('collapsed');
-                    localStorage.setItem(`module-${moduleId}-collapsed`, isCollapsed);
-                });
-                
-                // Restore collapse state from localStorage
-                const moduleId = moduleContainer.id;
-                const wasCollapsed = localStorage.getItem(`module-${moduleId}-collapsed`) === 'true';
-                if (wasCollapsed) {
-                    moduleContainer.classList.add('collapsed');
-                }
-                
-                // Mark as initialized
-                moduleContainer.setAttribute('data-foldable-initialized', 'true');
-                
-                console.log(`Folding initialized for module: ${moduleId}`);
-            } else {
-                console.warn(`Could not initialize folding for module: header or content not found`, {
-                    moduleId: moduleContainer.id,
-                    hasHeader: !!header,
-                    hasContent: !!content
-                });
+            // Only initialize if it has content (not just empty container)
+            const hasContent = moduleContainer.querySelector('[class*="-header"]');
+            if (hasContent) {
+                initializeFoldableModule(moduleContainer);
             }
         });
     }
     
-    // Initialize immediately
-    initializeFoldableModules();
+    // Initialize any modules that are already loaded
+    initializeExistingModules();
     
-    // Watch for new modules being added to the DOM
+    // Watch for new modules being added to the DOM (backup mechanism)
     const observer = new MutationObserver(function(mutations) {
-        let needsReinit = false;
+        let needsCheck = false;
         
         mutations.forEach(function(mutation) {
             if (mutation.type === 'childList') {
                 mutation.addedNodes.forEach(function(node) {
                     if (node.nodeType === Node.ELEMENT_NODE) {
-                        // Check if the added node is a foldable module or contains one
-                        if (node.classList && node.classList.contains('foldable-module')) {
-                            needsReinit = true;
-                        } else if (node.querySelector && node.querySelector('.foldable-module')) {
-                            needsReinit = true;
+                        // Check if content was added to a foldable module
+                        if (node.querySelector && node.querySelector('[class*="-header"]')) {
+                            needsCheck = true;
                         }
                     }
                 });
             }
         });
         
-        // Reinitialize if new foldable modules were added
-        if (needsReinit) {
-            setTimeout(initializeFoldableModules, 100);
+        // Check for new modules if content was added
+        if (needsCheck) {
+            setTimeout(initializeExistingModules, 150);
         }
     });
     
@@ -515,7 +540,16 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // Global function to expand all modules
+    // Also observe experiment browser container
+    const expBrowserContainer = document.getElementById('experiment-browser-container');
+    if (expBrowserContainer) {
+        observer.observe(expBrowserContainer, {
+            childList: true,
+            subtree: true
+        });
+    }
+    
+    // Global functions to expand/collapse all modules
     window.expandAllModules = function() {
         document.querySelectorAll('.foldable-module.collapsed').forEach(module => {
             module.classList.remove('collapsed');
@@ -523,7 +557,6 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     };
     
-    // Global function to collapse all modules
     window.collapseAllModules = function() {
         document.querySelectorAll('.foldable-module:not(.collapsed)').forEach(module => {
             module.classList.add('collapsed');
