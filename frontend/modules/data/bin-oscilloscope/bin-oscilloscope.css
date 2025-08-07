@@ -1,7 +1,11 @@
+/* ===================================================================== */
+/* BIN-OSCILLOSCOPE.CSS - Desktop Only with Folding Support */
+/* ===================================================================== */
+
 /**
  * Binary Oscilloscope Module - Styling
- * Matches Schlatter design system and experiment-browser patterns
- * Minimal styling focused on plot display
+ * Desktop-only version with enhanced folding support
+ * NO mobile/responsive code
  */
 
 /* === MODULE CONTAINER === */
@@ -13,12 +17,17 @@
     margin-bottom: var(--spacing-lg);
 }
 
-/* === HEADER SECTION (matches experiment-browser) === */
+/* === HEADER SECTION === */
 .bin-oscilloscope-header {
     background-color: var(--schlatter-blue);
     color: var(--text-white);
     padding: var(--spacing-md) var(--spacing-lg);
     border-bottom: none;
+    transition: background-color var(--transition-fast);
+}
+
+.bin-oscilloscope-header:hover {
+    background-color: rgba(var(--schlatter-blue-rgb), 0.95);
 }
 
 .bin-oscilloscope-header .card-title {
@@ -34,11 +43,31 @@
     font-size: var(--font-sm);
 }
 
+/* === FOLDING-SPECIFIC HEADER STYLES === */
+.bin-oscilloscope-header .fold-arrow {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: var(--text-white);
+}
+
+.bin-oscilloscope-header .fold-arrow:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+    transform: scale(1.1);
+}
+
 /* === CONTENT SECTION === */
 .bin-oscilloscope-content {
     position: relative;
     min-height: 600px;
     background-color: var(--bg-white);
+    transition: all var(--transition-slow);
+    overflow: hidden;
+}
+
+.foldable-module.collapsed .bin-oscilloscope-content {
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
 }
 
 /* === PLOT CONTAINER === */
@@ -47,6 +76,15 @@
     height: 600px;
     padding: var(--spacing-md);
     background-color: var(--bg-white);
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .plot-container {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
 }
 
 .oscilloscope-plot {
@@ -54,9 +92,15 @@
     height: 100%;
     border-radius: var(--border-radius-sm);
     background-color: var(--bg-white);
+    transition: opacity var(--transition-normal);
 }
 
-/* === STATE SECTIONS (reuse existing patterns) === */
+.foldable-module.collapsed .oscilloscope-plot {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* === STATE SECTIONS === */
 .loading-state,
 .error-state {
     padding: var(--spacing-xxl);
@@ -66,6 +110,17 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .loading-state,
+.foldable-module.collapsed .error-state {
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    opacity: 0;
 }
 
 .loading-content,
@@ -88,22 +143,27 @@
 }
 
 /* === PLOTLY CUSTOMIZATIONS === */
-
-/* Ensure Plotly plot fits perfectly */
 .oscilloscope-plot .plotly-graph-div {
     width: 100% !important;
     height: 100% !important;
+    transition: opacity var(--transition-normal);
+}
+
+.foldable-module.collapsed .oscilloscope-plot .plotly-graph-div {
+    opacity: 0 !important;
+    pointer-events: none !important;
 }
 
 /* Custom Y-axis hover zones for scrolling */
 .oscilloscope-plot .y-axis-hover-zone {
     position: absolute;
     top: 0;
-    bottom: 60px; /* Account for x-axis */
+    bottom: 60px;
     width: 80px;
     pointer-events: none;
     z-index: 10;
     cursor: ns-resize;
+    transition: background-color var(--transition-fast);
 }
 
 .oscilloscope-plot .y-axis-hover-zone.left {
@@ -118,19 +178,28 @@
     right: 0;
 }
 
-/* Show cursor change when hovering over Y-axis zones */
 .oscilloscope-plot .y-axis-hover-zone.active {
     pointer-events: all;
     background-color: rgba(var(--schlatter-blue-rgb), 0.05);
+}
+
+.foldable-module.collapsed .oscilloscope-plot .y-axis-hover-zone {
+    pointer-events: none !important;
+    opacity: 0;
 }
 
 /* Plotly toolbar positioning */
 .oscilloscope-plot .modebar {
     right: 10px !important;
     top: 10px !important;
+    transition: opacity var(--transition-fast);
 }
 
-/* Custom Plotly styling to match Schlatter colors */
+.foldable-module.collapsed .oscilloscope-plot .modebar {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
 .oscilloscope-plot .plotly .modebar-btn path {
     fill: var(--schlatter-blue) !important;
 }
@@ -139,64 +208,33 @@
     fill: var(--btn-primary-hover) !important;
 }
 
-/* Ensure plot background matches design system */
 .oscilloscope-plot .bg {
     fill: var(--bg-white) !important;
 }
 
-/* Style the plot border */
 .oscilloscope-plot .xy {
     border: 1px solid var(--border-light);
     border-radius: var(--border-radius-sm);
 }
 
-/* === RESPONSIVE ADJUSTMENTS === */
-
-/* Ensure plot scales properly */
-@media (max-width: 1200px) {
-    .plot-container {
-        height: 500px;
-        padding: var(--spacing-sm);
-    }
-    
-    .bin-oscilloscope-content {
-        min-height: 500px;
-    }
-    
-    .loading-state,
-    .error-state {
-        min-height: 500px;
-    }
+/* === COLLAPSED STATE INDICATOR === */
+.foldable-module.collapsed .bin-oscilloscope-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, 
+        rgba(255, 255, 255, 0.3) 0%, 
+        rgba(255, 255, 255, 0.6) 50%, 
+        rgba(255, 255, 255, 0.3) 100%);
 }
 
-@media (max-width: 768px) {
-    .plot-container {
-        height: 400px;
-        padding: var(--spacing-xs);
-    }
-    
-    .bin-oscilloscope-content {
-        min-height: 400px;
-    }
-    
-    .loading-state,
-    .error-state {
-        min-height: 400px;
-        padding: var(--spacing-lg);
-    }
-    
-    .bin-oscilloscope-header {
-        padding: var(--spacing-sm) var(--spacing-md);
-    }
-    
-    .bin-oscilloscope-header .card-title {
-        font-size: var(--font-lg);
-    }
-    
-    /* Hide Y-axis hover zones on mobile for better touch interaction */
-    .oscilloscope-plot .y-axis-hover-zone {
-        display: none;
-    }
+/* === PERFORMANCE OPTIMIZATION === */
+.foldable-module.collapsed .oscilloscope-plot * {
+    animation: none !important;
+    transition: none !important;
 }
 
 /* === PRINT STYLES === */
@@ -217,7 +255,26 @@
         display: none !important;
     }
     
-    .plot-container {
-        height: 500px;
+    .foldable-module.collapsed .bin-oscilloscope-content {
+        min-height: 600px !important;
+        max-height: none !important;
+        padding: var(--spacing-md) !important;
+        overflow: visible !important;
+    }
+    
+    .foldable-module.collapsed .plot-container {
+        height: 600px !important;
+        min-height: 600px !important;
+        padding: var(--spacing-md) !important;
+        overflow: visible !important;
+    }
+    
+    .foldable-module.collapsed .oscilloscope-plot {
+        opacity: 1 !important;
+        pointer-events: all !important;
+    }
+    
+    .fold-arrow {
+        display: none !important;
     }
 }

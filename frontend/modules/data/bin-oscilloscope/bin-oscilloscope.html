@@ -1,20 +1,21 @@
-<!-- Binary Oscilloscope Module Template -->
+<!-- Binary Oscilloscope Module Template - FIXED VERSION -->
 <div class="bin-oscilloscope-container">
     
-    <!-- Module Header (matches experiment-browser pattern) -->
+    <!-- Module Header (standardized structure for folding) -->
     <div class="bin-oscilloscope-header card-header">
         <div class="flex items-center justify-between">
             <div class="bin-oscilloscope-title">
                 <h3 class="card-title">Binary Oscilloscope Data</h3>
                 <p class="text-sm text-secondary" data-bind="experimentInfo">Engineering measurement channels</p>
             </div>
+            <!-- Fold arrow will be inserted here by folding script -->
         </div>
     </div>
     
     <!-- Module Content -->
     <div class="bin-oscilloscope-content">
         
-        <!-- Loading State (reuse existing pattern) -->
+        <!-- Loading State -->
         <div data-bind="loadingSpinner" class="loading-state hidden">
             <div class="loading-content">
                 <div class="loading-spinner"></div>
@@ -23,7 +24,7 @@
             </div>
         </div>
         
-        <!-- Error State (reuse existing pattern) -->
+        <!-- Error State -->
         <div data-bind="errorMessage" class="error-state hidden">
             <div class="error-content">
                 <h4>Binary Data Not Available</h4>

@@ -3,6 +3,7 @@
  * Uses Schlatter design system variables
  * Provides base styles and utility classes for all modules
  * Desktop-only version (mobile responsive code removed)
+ * UPDATED: Enhanced folding support and animations
  */
 
 /* Import design system variables */
@@ -223,6 +224,107 @@ input, select, textarea {
   margin: 0;
 }
 
+/* === ENHANCED FOLDING SUPPORT === */
+
+/* Base folding styles for any foldable container */
+.foldable-container {
+  transition: all var(--transition-normal);
+  overflow: hidden;
+}
+
+/* Folding header styles */
+.foldable-header {
+  cursor: pointer;
+  user-select: none;
+  transition: all var(--transition-fast);
+  position: relative;
+}
+
+.foldable-header:hover {
+  background-color: var(--bg-hover);
+}
+
+/* Enhanced module content transitions */
+.module-content {
+  transition: all var(--transition-slow);
+  overflow: hidden;
+}
+
+.module-content.collapsed {
+  max-height: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.module-content.expanded {
+  max-height: none;
+}
+
+/* Fold arrow base styles */
+.fold-arrow {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: var(--spacing-sm);
+}
+
+.fold-arrow svg {
+  transition: transform var(--transition-normal);
+  width: 16px;
+  height: 16px;
+}
+
+.fold-arrow.collapsed svg {
+  transform: rotate(-90deg);
+}
+
+/* Plot container folding optimization */
+.plot-container {
+  transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .plot-container {
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden;
+}
+
+/* Loading and error states folding behavior */
+.loading-state,
+.error-state {
+  transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .loading-state,
+.foldable-module.collapsed .error-state {
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden;
+}
+
+/* Table folding optimization */
+.table-container {
+  transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .table-container {
+  max-height: 0 !important;
+  overflow: hidden !important;
+  border: none !important;
+}
+
 /* === LAYOUT UTILITIES === */
 .container {
   width: 100%;
@@ -372,6 +474,34 @@ input, select, textarea {
   border: 0;
 }
 
+/* === ANIMATION UTILITIES === */
+.fade-in {
+  animation: fadeIn var(--transition-normal) ease-in-out;
+}
+
+.fade-out {
+  animation: fadeOut var(--transition-normal) ease-in-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes fadeOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+/* Smooth height transitions */
+.height-auto {
+  height: auto;
+}
+
+.height-0 {
+  height: 0;
+}
+
 /* === PRINT STYLES === */
 @media print {
   .btn,
@@ -386,5 +516,27 @@ input, select, textarea {
   
   .table th {
     background-color: var(--bg-light) !important;
+  }
+  
+  /* Expand all folded content for printing */
+  .foldable-module.collapsed .module-content {
+    max-height: none !important;
+    overflow: visible !important;
+    padding: var(--spacing-md) !important;
+  }
+  
+  .foldable-module.collapsed .plot-container {
+    height: auto !important;
+    min-height: 300px !important;
+    padding: var(--spacing-md) !important;
+  }
+  
+  .foldable-module.collapsed .table-container {
+    max-height: none !important;
+    overflow: visible !important;
+  }
+  
+  .fold-arrow {
+    display: none !important;
   }
 }

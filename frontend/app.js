@@ -1,6 +1,7 @@
 /**
  * Experiment Analyzer - Main Application Controller
  * Manages module loading, global state, and inter-module communication
+ * UPDATED: Added folding integration events
  */
 
 class ExperimentAnalyzer {
@@ -154,6 +155,10 @@ class ExperimentAnalyzer {
                 this.state.loadedModules.push(moduleName);
                 
                 console.log(`Module ${moduleName} loaded successfully`);
+                
+                // EMIT FOLDING EVENT: Module is ready for folding
+                this.emitModuleReadyForFolding(moduleName, containerId);
+                
                 return moduleInstance;
                 
             } else {
@@ -164,6 +169,26 @@ class ExperimentAnalyzer {
             console.error(`Failed to load module ${moduleName}:`, error);
             throw error;
         }
+    }
+    
+    /**
+     * Emit event when module is ready for folding initialization
+     */
+    emitModuleReadyForFolding(moduleName, containerId) {
+        // Small delay to ensure DOM is fully updated
+        setTimeout(() => {
+            const event = new CustomEvent('module:ready-for-folding', {
+                detail: {
+                    moduleName: moduleName,
+                    containerId: containerId,
+                    timestamp: Date.now()
+                },
+                bubbles: true
+            });
+            
+            document.dispatchEvent(event);
+            console.log(`Folding event emitted for module: ${moduleName}`);
+        }, 50); // Small delay to ensure DOM is ready
     }
     
     /**

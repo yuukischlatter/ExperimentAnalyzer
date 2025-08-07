@@ -1,20 +1,21 @@
-<!-- Ambient Temperature Module Template -->
+<!-- Ambient Temperature Module Template - FIXED VERSION -->
 <div class="ambient-temperature-container">
     
-    <!-- Module Header (matches experiment-browser and bin-oscilloscope pattern) -->
+    <!-- Module Header (standardized structure for folding) -->
     <div class="ambient-temperature-header card-header">
         <div class="flex items-center justify-between">
             <div class="ambient-temperature-title">
                 <h3 class="card-title">Ambient Temperature Data</h3>
                 <p class="text-sm text-secondary" data-bind="experimentInfo">Temperature sensor measurements during welding process</p>
             </div>
+            <!-- Fold arrow will be inserted here by folding script -->
         </div>
     </div>
     
     <!-- Module Content -->
     <div class="ambient-temperature-content">
         
-        <!-- Loading State (reuse existing pattern) -->
+        <!-- Loading State -->
         <div data-bind="loadingSpinner" class="loading-state hidden">
             <div class="loading-content">
                 <div class="loading-spinner"></div>
@@ -23,7 +24,7 @@
             </div>
         </div>
         
-        <!-- Error State (reuse existing pattern) -->
+        <!-- Error State -->
         <div data-bind="errorMessage" class="error-state hidden">
             <div class="error-content">
                 <h4>Temperature Data Not Available</h4>

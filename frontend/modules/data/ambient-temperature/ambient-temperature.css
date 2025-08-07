@@ -1,7 +1,14 @@
+
+
+/* ===================================================================== */
+/* AMBIENT-TEMPERATURE.CSS - Desktop Only with Folding Support */
+/* ===================================================================== */
+
 /**
  * Ambient Temperature Module - Styling
- * Matches Schlatter design system and follows bin-oscilloscope patterns
+ * Desktop-only version with enhanced folding support
  * Temperature-specific styling with warm color scheme
+ * NO mobile/responsive code
  */
 
 /* === MODULE CONTAINER === */
@@ -13,12 +20,17 @@
     margin-bottom: var(--spacing-lg);
 }
 
-/* === HEADER SECTION (matches bin-oscilloscope) === */
+/* === HEADER SECTION === */
 .ambient-temperature-header {
     background-color: var(--schlatter-blue);
     color: var(--text-white);
     padding: var(--spacing-md) var(--spacing-lg);
     border-bottom: none;
+    transition: background-color var(--transition-fast);
+}
+
+.ambient-temperature-header:hover {
+    background-color: rgba(var(--schlatter-blue-rgb), 0.95);
 }
 
 .ambient-temperature-header .card-title {
@@ -34,11 +46,31 @@
     font-size: var(--font-sm);
 }
 
+/* === FOLDING-SPECIFIC HEADER STYLES === */
+.ambient-temperature-header .fold-arrow {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: var(--text-white);
+}
+
+.ambient-temperature-header .fold-arrow:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+    transform: scale(1.1);
+}
+
 /* === CONTENT SECTION === */
 .ambient-temperature-content {
     position: relative;
     min-height: 600px;
     background-color: var(--bg-white);
+    transition: all var(--transition-slow);
+    overflow: hidden;
+}
+
+.foldable-module.collapsed .ambient-temperature-content {
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
 }
 
 /* === PLOT CONTAINER === */
@@ -47,6 +79,15 @@
     height: 600px;
     padding: var(--spacing-md);
     background-color: var(--bg-white);
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .plot-container {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
 }
 
 .temperature-plot {
@@ -54,9 +95,15 @@
     height: 100%;
     border-radius: var(--border-radius-sm);
     background-color: var(--bg-white);
+    transition: opacity var(--transition-normal);
 }
 
-/* === STATE SECTIONS (reuse existing patterns) === */
+.foldable-module.collapsed .temperature-plot {
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* === STATE SECTIONS === */
 .loading-state,
 .error-state {
     padding: var(--spacing-xxl);
@@ -66,6 +113,17 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .loading-state,
+.foldable-module.collapsed .error-state {
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    opacity: 0;
 }
 
 .loading-content,
@@ -88,20 +146,28 @@
 }
 
 /* === PLOTLY CUSTOMIZATIONS === */
-
-/* Ensure Plotly plot fits perfectly */
 .temperature-plot .plotly-graph-div {
     width: 100% !important;
     height: 100% !important;
+    transition: opacity var(--transition-normal);
 }
 
-/* Plotly toolbar positioning */
+.foldable-module.collapsed .temperature-plot .plotly-graph-div {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
 .temperature-plot .modebar {
     right: 10px !important;
     top: 10px !important;
+    transition: opacity var(--transition-fast);
 }
 
-/* Custom Plotly styling to match Schlatter colors */
+.foldable-module.collapsed .temperature-plot .modebar {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
 .temperature-plot .plotly .modebar-btn path {
     fill: var(--schlatter-blue) !important;
 }
@@ -110,98 +176,67 @@
     fill: var(--btn-primary-hover) !important;
 }
 
-/* Ensure plot background matches design system */
 .temperature-plot .bg {
     fill: var(--bg-white) !important;
 }
 
-/* Style the plot border */
 .temperature-plot .xy {
     border: 1px solid var(--border-light);
     border-radius: var(--border-radius-sm);
 }
 
 /* === TEMPERATURE-SPECIFIC CUSTOMIZATIONS === */
-
-/* Temperature plot grid styling */
 .temperature-plot .xgrid,
 .temperature-plot .ygrid {
-    stroke: rgba(255, 140, 0, 0.1) !important; /* Warm orange grid */
+    stroke: rgba(255, 140, 0, 0.1) !important;
 }
 
-/* Temperature axis styling */
 .temperature-plot .ytick text,
 .temperature-plot .yaxis .axistext {
-    fill: #D84315 !important; /* Warm red for temperature axis */
+    fill: #D84315 !important;
 }
 
-/* Temperature legend styling */
 .temperature-plot .legendtext {
     fill: var(--text-primary) !important;
 }
 
-/* Hover info box styling */
 .temperature-plot .hovertext {
     background-color: rgba(255, 255, 255, 0.95) !important;
     border: 1px solid #FF8C00 !important;
     border-radius: var(--border-radius-sm) !important;
 }
 
-/* === TEMPERATURE TRACE COLORS (CSS Custom Properties) === */
+/* === TEMPERATURE TRACE COLORS === */
 :root {
-    --temp-welding: #D84315;      /* Deep orange-red for welding temperature */
-    --temp-channel-1: #FF5722;    /* Orange-red for channel 1 */
-    --temp-channel-2: #FF6F00;    /* Deep orange for channel 2 */
-    --temp-channel-3: #FF8F00;    /* Amber for channel 3 */
-    --temp-channel-4: #FFA000;    /* Orange for channel 4 */
-    --temp-channel-5: #FFB300;    /* Light orange for channel 5 */
-    --temp-channel-6: #FFC107;    /* Yellow-orange for channel 6 */
-    --temp-channel-7: #FFCA28;    /* Light yellow-orange for channel 7 */
-    --temp-channel-8: #FFD54F;    /* Pale yellow-orange for channel 8 */
+    --temp-welding: #D84315;
+    --temp-channel-1: #FF5722;
+    --temp-channel-2: #FF6F00;
+    --temp-channel-3: #FF8F00;
+    --temp-channel-4: #FFA000;
+    --temp-channel-5: #FFB300;
+    --temp-channel-6: #FFC107;
+    --temp-channel-7: #FFCA28;
+    --temp-channel-8: #FFD54F;
 }
 
-/* === RESPONSIVE ADJUSTMENTS === */
-
-/* Ensure plot scales properly */
-@media (max-width: 1200px) {
-    .plot-container {
-        height: 500px;
-        padding: var(--spacing-sm);
-    }
-    
-    .ambient-temperature-content {
-        min-height: 500px;
-    }
-    
-    .loading-state,
-    .error-state {
-        min-height: 500px;
-    }
+/* === COLLAPSED STATE INDICATOR === */
+.foldable-module.collapsed .ambient-temperature-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, 
+        rgba(255, 255, 255, 0.3) 0%, 
+        rgba(255, 255, 255, 0.6) 50%, 
+        rgba(255, 255, 255, 0.3) 100%);
 }
 
-@media (max-width: 768px) {
-    .plot-container {
-        height: 400px;
-        padding: var(--spacing-xs);
-    }
-    
-    .ambient-temperature-content {
-        min-height: 400px;
-    }
-    
-    .loading-state,
-    .error-state {
-        min-height: 400px;
-        padding: var(--spacing-lg);
-    }
-    
-    .ambient-temperature-header {
-        padding: var(--spacing-sm) var(--spacing-md);
-    }
-    
-    .ambient-temperature-header .card-title {
-        font-size: var(--font-lg);
-    }
+/* === PERFORMANCE OPTIMIZATION === */
+.foldable-module.collapsed .temperature-plot * {
+    animation: none !important;
+    transition: none !important;
 }
 
 /* === PRINT STYLES === */
@@ -222,7 +257,26 @@
         display: none !important;
     }
     
-    .plot-container {
-        height: 500px;
+    .foldable-module.collapsed .ambient-temperature-content {
+        min-height: 600px !important;
+        max-height: none !important;
+        padding: var(--spacing-md) !important;
+        overflow: visible !important;
+    }
+    
+    .foldable-module.collapsed .plot-container {
+        height: 600px !important;
+        min-height: 600px !important;
+        padding: var(--spacing-md) !important;
+        overflow: visible !important;
+    }
+    
+    .foldable-module.collapsed .temperature-plot {
+        opacity: 1 !important;
+        pointer-events: all !important;
+    }
+    
+    .fold-arrow {
+        display: none !important;
     }
 }
