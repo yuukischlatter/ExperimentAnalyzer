@@ -1,12 +1,15 @@
 /**
- * Position CSV Reader - Tab-Delimited Format
+ * Position CSV Reader - Tab-Delimited Format (Fixed Stack Overflow)
  * Parses position CSV files with datetime handling and tab separation
  * Format: snapshot_optoNCDT-ILD1220_*.csv files
  * Columns: DateTime, UnixTime, RawPosition (tab-separated)
+ * 
+ * Fixed: Uses Papa Parse and single-pass processing to avoid stack overflow on large files
  */
 
 const fs = require('fs').promises;
 const path = require('path');
+const Papa = require('papaparse');
 
 class PositionCsvReader {
     constructor(filename) {
@@ -163,56 +166,6 @@ class PositionCsvReader {
     }
 
     /**
-     * Convert Unix timestamps to relative microseconds
-     * @param {number[]} timestamps - Array of Unix timestamps
-     * @returns {Float32Array} Relative time in microseconds from start
-     */
-    convertTimestampsToRelative(timestamps) {
-        if (!timestamps || timestamps.length === 0) {
-            return new Float32Array(0);
-        }
-        
-        const startTime = timestamps[0];
-        const relativeTime = new Float32Array(timestamps.length);
-        
-        // Process in chunks to avoid stack overflow
-        const chunkSize = 10000;
-        for (let i = 0; i < timestamps.length; i += chunkSize) {
-            const end = Math.min(i + chunkSize, timestamps.length);
-            for (let j = i; j < end; j++) {
-                relativeTime[j] = (timestamps[j] - startTime) * 1000;
-            }
-        }
-        
-        return relativeTime;
-    }
-
-    /**
-     * Apply position transformation
-     * Formula from C#: final_position = -1 * raw_position + 49.73
-     * @param {number[]} rawPositions - Array of raw position values
-     * @returns {Float32Array} Transformed position values
-     */
-    transformPositions(rawPositions) {
-        if (!rawPositions || rawPositions.length === 0) {
-            return new Float32Array(0);
-        }
-        
-        const transformedPositions = new Float32Array(rawPositions.length);
-        
-        // Process in chunks to avoid stack overflow
-        const chunkSize = 10000;
-        for (let i = 0; i < rawPositions.length; i += chunkSize) {
-            const end = Math.min(i + chunkSize, rawPositions.length);
-            for (let j = i; j < end; j++) {
-                transformedPositions[j] = -1 * rawPositions[j] + 49.73;
-            }
-        }
-        
-        return transformedPositions;
-    }
-
-    /**
      * Main file reading method
      * @returns {Promise<void>}
      */
@@ -236,17 +189,29 @@ class PositionCsvReader {
             
             console.log(`File loaded: ${(fileContent.length / 1024).toFixed(1)} KB in ${fileReadTime.toFixed(2)}s`);
             
-            // Split into lines
+            // Parse CSV with Papa Parse (configured for tab-delimited)
             const parseStart = process.hrtime.bigint();
-            const lines = fileContent.split('\n');
+            const parseResult = Papa.parse(fileContent, {
+                header: false, // Position CSV has no headers
+                skipEmptyLines: true,
+                delimiter: '\t', // Tab-delimited
+                dynamicTyping: false, // We'll handle parsing manually
+                comments: '#' // Skip comment lines
+            });
+            
+            if (parseResult.errors.length > 0) {
+                console.warn('CSV parsing warnings:', parseResult.errors.slice(0, 5)); // Show first 5 errors only
+            }
+            
             const parseTime = Number(process.hrtime.bigint() - parseStart) / 1e9;
+            const rawData = parseResult.data;
             
-            console.log(`File split into ${lines.length} lines in ${parseTime.toFixed(2)}s`);
+            console.log(`CSV parsed: ${rawData.length} rows in ${parseTime.toFixed(2)}s`);
             
-            // Process lines
+            // Process data in single pass
             console.log('Processing position data...');
             const dataProcessStart = process.hrtime.bigint();
-            await this.processPositionData(lines);
+            await this.processPositionData(rawData);
             const dataProcessTime = Number(process.hrtime.bigint() - dataProcessStart) / 1e9;
             
             // Store comprehensive metadata
@@ -258,7 +223,7 @@ class PositionCsvReader {
                 processedAt: new Date(),
                 
                 // CSV-specific metadata
-                totalLines: lines.length,
+                totalLines: rawData.length,
                 validDataLines: this.positionData.pos_x ? this.positionData.pos_x.points : 0,
                 formatInfo: {
                     type: 'position_tab_delimited',
@@ -293,141 +258,141 @@ class PositionCsvReader {
     }
 
     /**
-     * Process position data from CSV lines
-     * @param {Array} lines - Array of CSV lines
+     * Process position data from parsed CSV - SINGLE PASS VERSION
+     * @param {Array} rawData - Papa Parse data rows (array of arrays)
      */
-    async processPositionData(lines) {
-        if (lines.length === 0) {
-            throw new Error('No lines found in CSV file');
+    async processPositionData(rawData) {
+        if (rawData.length === 0) {
+            throw new Error('No data rows found in CSV file');
         }
         
-        const datetimes = [];
-        const unixTimes = [];
-        const rawPositions = [];
+        console.log(`Processing ${rawData.length} CSV rows...`);
         
-        let validLines = 0;
-        let skippedLines = 0;
+        // Pre-allocate arrays with estimated size (we'll trim later)
+        const maxRows = rawData.length;
+        const tempRelativeTime = new Array(maxRows);
+        const tempTransformedPositions = new Array(maxRows);
+        const tempDatetimes = new Array(maxRows);
+        const tempUnixTimes = new Array(maxRows);
         
-        console.log('Parsing CSV lines...');
+        let validCount = 0;
+        let skippedCount = 0;
+        let startUnixTime = null;
         
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i].trim();
+        // Single pass through all data
+        for (let i = 0; i < rawData.length; i++) {
+            const row = rawData[i];
             
-            // Skip empty lines
-            if (!line) {
-                continue;
-            }
-            
-            // Skip comment lines (start with #)
-            if (line.startsWith('#')) {
-                skippedLines++;
-                continue;
-            }
-            
-            // Split by tab
-            const fields = line.split('\t');
-            
-            if (fields.length < 3) {
-                skippedLines++;
-                if (validLines < 5) {
-                    console.warn(`Line ${i + 1}: Expected 3 fields, got ${fields.length}: "${line.substring(0, 100)}"`);
-                }
+            // Skip rows that don't have 3 columns
+            if (!row || row.length < 3) {
+                skippedCount++;
                 continue;
             }
             
             try {
                 // Parse datetime (field 0)
-                const datetime = this.parseDateTime(fields[0]);
+                const datetime = this.parseDateTime(row[0]);
                 if (!datetime) {
-                    skippedLines++;
-                    if (validLines < 5) {
-                        console.warn(`Line ${i + 1}: Invalid datetime format: "${fields[0]}"`);
+                    skippedCount++;
+                    if (validCount < 5) {
+                        console.warn(`Row ${i + 1}: Invalid datetime format: "${row[0]}"`);
                     }
                     continue;
                 }
                 
                 // Parse unix time (field 1)
-                const unixTime = this.parseNumber(fields[1]);
+                const unixTime = this.parseNumber(row[1]);
                 if (isNaN(unixTime)) {
-                    skippedLines++;
-                    if (validLines < 5) {
-                        console.warn(`Line ${i + 1}: Invalid unix time: "${fields[1]}"`);
+                    skippedCount++;
+                    if (validCount < 5) {
+                        console.warn(`Row ${i + 1}: Invalid unix time: "${row[1]}"`);
                     }
                     continue;
                 }
                 
                 // Parse raw position (field 2)
-                const rawPosition = this.parseNumber(fields[2]);
+                const rawPosition = this.parseNumber(row[2]);
                 if (isNaN(rawPosition)) {
-                    skippedLines++;
-                    if (validLines < 5) {
-                        console.warn(`Line ${i + 1}: Invalid position value: "${fields[2]}"`);
+                    skippedCount++;
+                    if (validCount < 5) {
+                        console.warn(`Row ${i + 1}: Invalid position value: "${row[2]}"`);
                     }
                     continue;
                 }
                 
-                // Store valid data
-                datetimes.push(datetime);
-                unixTimes.push(unixTime);
-                rawPositions.push(rawPosition);
+                // Set start time on first valid record
+                if (startUnixTime === null) {
+                    startUnixTime = unixTime;
+                }
                 
-                validLines++;
+                // Store data - do all transformations in single pass
+                tempDatetimes[validCount] = datetime;
+                tempUnixTimes[validCount] = unixTime;
                 
-                if (validLines <= 5) {
-                    console.log(`Line ${i + 1}: DateTime=${datetime.toISOString()}, UnixTime=${unixTime}, RawPos=${rawPosition}`);
+                // Convert to relative time (microseconds from start)
+                tempRelativeTime[validCount] = (unixTime - startUnixTime) * 1000;
+                
+                // Transform position (apply -1 * raw + 49.73)
+                tempTransformedPositions[validCount] = -1 * rawPosition + 49.73;
+                
+                validCount++;
+                
+                if (validCount <= 5) {
+                    console.log(`Row ${i + 1}: DateTime=${datetime.toISOString()}, UnixTime=${unixTime}, RawPos=${rawPosition}, TransformedPos=${tempTransformedPositions[validCount - 1].toFixed(3)}`);
                 }
                 
             } catch (error) {
-                skippedLines++;
-                if (validLines < 5) {
-                    console.warn(`Line ${i + 1}: Parse error: ${error.message}`);
+                skippedCount++;
+                if (validCount < 5) {
+                    console.warn(`Row ${i + 1}: Parse error: ${error.message}`);
                 }
                 continue;
             }
         }
         
-        if (validLines === 0) {
-            throw new Error('No valid data lines found in CSV file');
+        if (validCount === 0) {
+            throw new Error('No valid data rows found in CSV file');
         }
         
-        console.log(`Parsing complete: ${validLines} valid lines, ${skippedLines} skipped`);
+        console.log(`Processing complete: ${validCount} valid rows, ${skippedCount} skipped`);
         
-        // Convert to relative time (microseconds from start)
-        console.log('Converting timestamps to relative time...');
-        const relativeTime = this.convertTimestampsToRelative(unixTimes);
+        // Create final typed arrays with exact size
+        const finalRelativeTime = new Float32Array(validCount);
+        const finalTransformedPositions = new Float32Array(validCount);
         
-        // Transform positions (apply -1 * raw + 49.73)
-        console.log('Transforming position values...');
-        const transformedPositions = this.transformPositions(rawPositions);
+        for (let i = 0; i < validCount; i++) {
+            finalRelativeTime[i] = tempRelativeTime[i];
+            finalTransformedPositions[i] = tempTransformedPositions[i];
+        }
         
         // Calculate sampling rate (approximate)
         let samplingRate = 1000.0; // Default 1 kHz
-        if (unixTimes.length > 1) {
-            const totalTime = unixTimes[unixTimes.length - 1] - unixTimes[0];
-            const avgInterval = totalTime / (unixTimes.length - 1);
+        if (validCount > 1) {
+            const totalTime = tempUnixTimes[validCount - 1] - tempUnixTimes[0];
+            const avgInterval = totalTime / (validCount - 1);
             samplingRate = avgInterval > 0 ? 1.0 / avgInterval : 1000.0;
         }
         
         // Store position data
         this.positionData['pos_x'] = {
-            time: relativeTime,
-            values: transformedPositions,
+            time: finalRelativeTime,
+            values: finalTransformedPositions,
             label: 'Position X',
             unit: 'mm',
             originalHeader: 'Raw Position',
-            points: validLines,
+            points: validCount,
             samplingRate: samplingRate,
             channelId: 'pos_x',
             
             // Additional metadata
             rawTimeRange: {
-                start: unixTimes[0],
-                end: unixTimes[unixTimes.length - 1],
-                duration: unixTimes[unixTimes.length - 1] - unixTimes[0]
+                start: tempUnixTimes[0],
+                end: tempUnixTimes[validCount - 1],
+                duration: tempUnixTimes[validCount - 1] - tempUnixTimes[0]
             },
             datetimeRange: {
-                start: datetimes[0],
-                end: datetimes[datetimes.length - 1]
+                start: tempDatetimes[0],
+                end: tempDatetimes[validCount - 1]
             }
         };
         
@@ -439,9 +404,17 @@ class PositionCsvReader {
             unit: 'mm'
         };
         
-        console.log(`Position data processed: ${validLines} points, sampling rate: ${samplingRate.toFixed(1)} Hz`);
-        console.log(`Time range: ${relativeTime[0].toFixed(2)} to ${relativeTime[relativeTime.length - 1].toFixed(2)} µs`);
-        console.log(`Position range: ${Math.min(...transformedPositions).toFixed(3)} to ${Math.max(...transformedPositions).toFixed(3)} mm`);
+        // Calculate min/max without spread operator to avoid stack overflow
+        let minPos = finalTransformedPositions[0];
+        let maxPos = finalTransformedPositions[0];
+        for (let i = 1; i < finalTransformedPositions.length; i++) {
+            if (finalTransformedPositions[i] < minPos) minPos = finalTransformedPositions[i];
+            if (finalTransformedPositions[i] > maxPos) maxPos = finalTransformedPositions[i];
+        }
+        
+        console.log(`Position data processed: ${validCount} points, sampling rate: ${samplingRate.toFixed(1)} Hz`);
+        console.log(`Time range: ${finalRelativeTime[0].toFixed(2)} to ${finalRelativeTime[finalRelativeTime.length - 1].toFixed(2)} µs`);
+        console.log(`Position range: ${minPos.toFixed(3)} to ${maxPos.toFixed(3)} mm`);
     }
 
     // === PUBLIC DATA ACCESS METHODS ===

@@ -201,7 +201,7 @@ class ExperimentAnalyzer {
         }
         
         // Data visualization modules
-        if (['bin-oscilloscope', 'acceleration', 'position', 'tensile-strength', 
+        if (['bin-oscilloscope', 'acceleration', 'distance-sensor', 'tensile-strength', 
              'photo-gallery', 'thermal-ir', 'tcp5-oscilloscope', 'weld-journal',
              'crown-measurements', 'ambient-temperature'].includes(moduleName)) {
             return `/modules/data/${moduleName}`;

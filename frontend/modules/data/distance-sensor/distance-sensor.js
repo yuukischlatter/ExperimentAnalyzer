@@ -193,56 +193,65 @@ class DistanceSensor {
     }
     
     /**
-     * Load position channel data (single channel: pos_x)
-     */
-    async loadPositionChannelData() {
-        try {
-            const channelId = 'pos_x';  // Single channel for position data
-            
-            console.log(`Loading position channel: ${channelId}`);
-            
-            const response = await fetch(
-                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/pos-data/${channelId}?` +
-                `start=${this.state.currentTimeRange.min * 1000000}&` +  // Convert back to µs
-                `end=${this.state.currentTimeRange.max * 1000000}&` +
-                `maxPoints=${this.config.maxPoints}`,
-                {
-                    method: 'GET',
-                    headers: {
-                        'Accept': 'application/json'
-                    }
+ * Load position channel data (single channel: pos_x)
+ */
+async loadPositionChannelData() {
+    try {
+        const channelId = 'pos_x';  // Single channel for position data
+        
+        console.log(`Loading position channel: ${channelId}`);
+        
+        const response = await fetch(
+            `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/pos-data/${channelId}?` +
+            `start=${this.state.currentTimeRange.min * 1000000}&` +  // Convert back to µs
+            `end=${this.state.currentTimeRange.max * 1000000}&` +
+            `maxPoints=${this.config.maxPoints}`,
+            {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
                 }
-            );
-            
-            if (!response.ok) {
-                throw new Error(`Failed to load position channel data: ${response.status}`);
             }
-            
-            const result = await response.json();
-            if (!result.success) {
-                throw new Error(result.error || 'Failed to load position channel data');
-            }
-            
-            // Convert time data from microseconds to seconds for plotting
-            const timeInSeconds = result.data.time.map(t => t / 1000000);
-            
-            this.state.plotData = {
-                pos_x: {
-                    success: true,
-                    data: {
-                        time: timeInSeconds,
-                        values: result.data.values
-                    },
-                    metadata: result.metadata
-                }
-            };
-            
-            console.log(`Loaded position channel successfully: ${result.data.time.length} points`);
-            
-        } catch (error) {
-            throw new Error(`Position channel data loading failed: ${error.message}`);
+        );
+        
+        if (!response.ok) {
+            throw new Error(`Failed to load position channel data: ${response.status}`);
         }
+        
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.error || 'Failed to load position channel data');
+        }
+        
+        // FIXED: The API response has nested structure: result.data.data.time
+        const apiData = result.data.data || result.data; // Handle both structures
+        const apiMetadata = result.data.metadata || result.metadata;
+        
+        if (!apiData.time || !Array.isArray(apiData.time)) {
+            throw new Error('Invalid API response: missing time data array');
+        }
+        
+        // Convert time data from microseconds to seconds for plotting
+        const timeInSeconds = apiData.time.map(t => t / 1000000);
+        
+        this.state.plotData = {
+            pos_x: {
+                success: true,
+                data: {
+                    time: timeInSeconds,
+                    values: apiData.values
+                },
+                metadata: apiMetadata
+            }
+        };
+        
+        console.log(`Loaded position channel successfully: ${apiData.time.length} points`);
+        
+    } catch (error) {
+        console.error('Position channel loading error details:', error);
+        throw new Error(`Position channel data loading failed: ${error.message}`);
     }
+}
     
     /**
      * Create Plotly distance plot
@@ -422,51 +431,101 @@ class DistanceSensor {
         }
     }
     
-    /**
-     * Resample position data for new time range
-     */
-    async resampleDataForTimeRange(startTime, endTime) {
-        try {
-            // Determine appropriate maxPoints based on zoom level and interpolated data density
-            const timespan = endTime - startTime;
-            const totalDuration = this.state.metadata.timeRange.max / 1000000 - this.state.metadata.timeRange.min / 1000000;
-            const zoomFactor = totalDuration / timespan;
-            
-            // Higher point density for position data since it's interpolated to 1ms
-            const maxPoints = Math.min(8000, Math.max(3000, Math.floor(4000 * Math.sqrt(zoomFactor))));
-            
-            const response = await fetch(
-                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/pos-data/pos_x?` +
-                `start=${startTime * 1000000}&` +  // Convert to microseconds
-                `end=${endTime * 1000000}&` +
-                `maxPoints=${maxPoints}`,
-                {
-                    method: 'GET',
-                    headers: {
-                        'Accept': 'application/json'
-                    }
-                }
-            );
-            
-            if (response.ok) {
-                const result = await response.json();
-                if (result.success) {
-                    // Convert time back to seconds and update plot
-                    const timeInSeconds = result.data.time.map(t => t / 1000000);
-                    
-                    const newTrace = {
-                        x: [timeInSeconds],
-                        y: [result.data.values]
-                    };
-                    
-                    await Plotly.restyle(this.elements.distancePlot, newTrace, [0]);
+/**
+ * Resample position data for new time range
+ */
+async resampleDataForTimeRange(startTime, endTime) {
+    try {
+        // Validate time range - don't allow negative times
+        const validStartTime = Math.max(0, startTime);
+        const maxTime = this.state.metadata.timeRange.max / 1000000; // Convert µs to seconds
+        const validEndTime = Math.min(maxTime, endTime);
+        
+        // Skip if invalid range
+        if (validStartTime >= validEndTime) {
+            console.warn('Invalid time range for resampling:', { startTime, endTime, validStartTime, validEndTime });
+            return;
+        }
+        
+        // Determine appropriate maxPoints based on zoom level
+        const timespan = validEndTime - validStartTime;
+        const totalDuration = maxTime;
+        const zoomFactor = totalDuration / timespan;
+        
+        // Higher point density for position data since it's interpolated to 1ms
+        const maxPoints = Math.min(8000, Math.max(3000, Math.floor(4000 * Math.sqrt(zoomFactor))));
+        
+        console.log(`Resampling for zoom: ${validStartTime.toFixed(3)}s - ${validEndTime.toFixed(3)}s, ${maxPoints} points`);
+        
+        const response = await fetch(
+            `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/pos-data/pos_x?` +
+            `start=${validStartTime * 1000000}&` +  // Convert to microseconds
+            `end=${validEndTime * 1000000}&` +
+            `maxPoints=${maxPoints}`,
+            {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json'
                 }
             }
-            
-        } catch (error) {
-            console.error('Error resampling position data:', error);
+        );
+        
+        if (response.ok) {
+            const result = await response.json();
+            if (result.success) {
+                // Handle the nested API response structure correctly
+                const apiData = result.data.data || result.data;
+                
+                if (!apiData.time || !Array.isArray(apiData.time)) {
+                    console.error('Invalid resampling response:', result);
+                    return;
+                }
+                
+                // Convert time back to seconds
+                const timeInSeconds = apiData.time.map(t => t / 1000000);
+                
+                // Use Plotly.react to completely update the plot
+                const newTraces = [{
+                    x: timeInSeconds,
+                    y: apiData.values,
+                    type: 'scatter',
+                    mode: 'lines',
+                    name: `Position X [mm]`,
+                    line: { 
+                        color: this.config.colors.pos_x,
+                        width: 2
+                    },
+                    hovertemplate: 
+                        '<b>%{fullData.name}</b><br>' +
+                        'Time: %{x:.4f} s<br>' +
+                        'Position: %{y:.3f} mm<br>' +
+                        '<extra></extra>'
+                }];
+                
+                // Update the plot completely with new data
+                await Plotly.react(this.elements.distancePlot, newTraces, this.plot.layout);
+                
+                console.log(`Plot updated with ${timeInSeconds.length} points for range ${validStartTime.toFixed(3)}s - ${validEndTime.toFixed(3)}s`);
+                
+                // Update internal state for consistency
+                this.state.plotData.pos_x.data = {
+                    time: timeInSeconds,
+                    values: apiData.values
+                };
+                
+                console.log(`Resampling completed: ${apiData.time.length} points loaded`);
+                
+            } else {
+                console.error('Resampling API error:', result.error);
+            }
+        } else {
+            console.error('Resampling HTTP error:', response.status);
         }
+        
+    } catch (error) {
+        console.error('Error resampling position data:', error);
     }
+}
     
     /**
      * Reset zoom to full position data range
