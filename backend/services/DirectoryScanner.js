@@ -187,7 +187,7 @@ class DirectoryScanner {
             hasTcp5File: this.hasFileType(fileNames, `${experimentId.toLowerCase()}_original(manuell).tpc5`),
             hasWeldJournal: this.hasFileType(fileNames, 'schweissjournal.txt'),
             hasCrownMeasurements: this.hasFileType(fileNames, 'geradheit+versatz.xlsx'),
-            hasAmbientTemperature: this.hasFilePattern(fileNames, /^temperature.*\.csv$/i)
+            hasAmbientTemperature: this.hasFilePattern(fileNames, /.*temperature.*\.csv$/i)
         });
 
         return experiment;

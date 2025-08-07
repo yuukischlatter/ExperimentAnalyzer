@@ -1,7 +1,7 @@
 /**
- * Experiments Routes - Complete with Binary Data Integration
+ * Experiments Routes - Complete with Binary Data Integration + Temperature CSV Integration
  * Converts C# WebApi/Controllers/Core/ExperimentsController.cs to Express routes
- * Enhanced with binary oscilloscope data endpoints
+ * Enhanced with binary oscilloscope data endpoints and temperature CSV endpoints
  */
 
 const express = require('express');
@@ -9,6 +9,7 @@ const router = express.Router();
 const ExperimentRepository = require('../repositories/ExperimentRepository');
 const StartupService = require('../services/StartupService');
 const BinaryParserService = require('../services/BinaryParserService');
+const TemperatureCsvService = require('../services/TemperatureCsvService');
 const { responseMiddleware } = require('../models/ApiResponse');
 
 // Apply response middleware to all routes in this router
@@ -16,6 +17,7 @@ router.use(responseMiddleware);
 
 // Initialize services
 const binaryService = new BinaryParserService();
+const temperatureService = new TemperatureCsvService();
 
 // ===== EXISTING EXPERIMENT ROUTES =====
 
@@ -49,6 +51,13 @@ router.get('/status', async (req, res) => {
             statusResult.status.binaryParserService = {
                 cachedExperiments: binaryCacheStatus.totalCachedExperiments,
                 cacheTimeout: binaryCacheStatus.cacheTimeoutMs
+            };
+            
+            // Add temperature service status
+            const temperatureCacheStatus = temperatureService.getCacheStatus();
+            statusResult.status.temperatureCsvService = {
+                cachedExperiments: temperatureCacheStatus.totalCachedExperiments,
+                cacheTimeout: temperatureCacheStatus.cacheTimeoutMs
             };
             
             res.success(statusResult.status);
@@ -106,6 +115,7 @@ router.post('/rescan', async (req, res) => {
             // Clear binary parser cache after rescan
             if (forceRefreshBool) {
                 binaryService.clearAllCache();
+                temperatureService.clearAllCache();
             }
             
             res.success({
@@ -236,7 +246,7 @@ router.get('/:experimentId', async (req, res) => {
     }
 });
 
-// ===== NEW BINARY DATA ROUTES =====
+// ===== BINARY DATA ROUTES =====
 
 /**
  * GET /api/experiments/:experimentId/bin-metadata
@@ -573,6 +583,342 @@ router.get('/:experimentId/bin-file-info', async (req, res) => {
     } catch (error) {
         console.error(`Error getting file info for ${req.params.experimentId}:`, error);
         res.error(`Failed to get file information: ${error.message}`, 500);
+    }
+});
+
+// ===== TEMPERATURE CSV DATA ROUTES =====
+
+/**
+ * GET /api/experiments/:experimentId/temp-metadata
+ * Get temperature CSV file metadata and channel information
+ */
+router.get('/:experimentId/temp-metadata', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { forceRefresh = false } = req.query;
+        const forceRefreshBool = forceRefresh === 'true' || forceRefresh === true;
+
+        console.log(`Getting temperature metadata for experiment: ${experimentId}`);
+
+        // Check if experiment has temperature file
+        const hasTemperature = await temperatureService.hasTemperatureFile(experimentId);
+        if (!hasTemperature) {
+            return res.error(`No temperature CSV file found for experiment ${experimentId}`, 404);
+        }
+
+        // Get comprehensive metadata
+        const metadataResult = await temperatureService.getTemperatureMetadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        res.success({
+            experimentId: experimentId,
+            hasValidTemperatureFile: true,
+            ...metadataResult
+        });
+
+    } catch (error) {
+        console.error(`Error getting temperature metadata for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get temperature metadata: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/temp-data/:channelId
+ * Get single temperature channel data with resampling
+ */
+router.get('/:experimentId/temp-data/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+        const { 
+            start = 0, 
+            end = null, 
+            maxPoints = 2000 
+        } = req.query;
+
+        const startTime = parseFloat(start);
+        const endTime = end ? parseFloat(end) : null;
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters
+        if (isNaN(startTime) || startTime < 0) {
+            return res.error('Invalid start time parameter', 400);
+        }
+        
+        if (endTime !== null && (isNaN(endTime) || endTime <= startTime)) {
+            return res.error('Invalid end time parameter', 400);
+        }
+        
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
+            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
+        }
+
+        // Get channel data
+        const channelResult = await temperatureService.getChannelData(experimentId, channelId, {
+            startTime: startTime,
+            endTime: endTime,
+            maxPoints: maxPointsInt
+        });
+
+        if (!channelResult.success) {
+            return res.error(channelResult.error, channelResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(channelResult);
+
+    } catch (error) {
+        console.error(`Error getting temperature channel data for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get temperature channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/:experimentId/temp-data/bulk
+ * Get multiple temperature channels data efficiently
+ */
+router.post('/:experimentId/temp-data/bulk', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { 
+            channelIds, 
+            startTime = 0, 
+            endTime = null, 
+            maxPoints = 2000 
+        } = req.body;
+
+        // Validate request body
+        if (!Array.isArray(channelIds)) {
+            return res.error('channelIds must be an array', 400);
+        }
+
+        if (channelIds.length === 0) {
+            return res.error('channelIds cannot be empty', 400);
+        }
+
+        if (channelIds.length > 20) {
+            return res.error('Maximum 20 channels per request', 400);
+        }
+
+        const startTimeFloat = parseFloat(startTime);
+        const endTimeFloat = endTime ? parseFloat(endTime) : null;
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters
+        if (isNaN(startTimeFloat) || startTimeFloat < 0) {
+            return res.error('Invalid startTime parameter', 400);
+        }
+        
+        if (endTimeFloat !== null && (isNaN(endTimeFloat) || endTimeFloat <= startTimeFloat)) {
+            return res.error('Invalid endTime parameter', 400);
+        }
+        
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
+            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
+        }
+
+        console.log(`Bulk temperature channel request for ${experimentId}: ${channelIds.length} channels`);
+
+        // Get bulk channel data
+        const bulkResult = await temperatureService.getBulkChannelData(experimentId, channelIds, {
+            startTime: startTimeFloat,
+            endTime: endTimeFloat,
+            maxPoints: maxPointsInt
+        });
+
+        if (!bulkResult.success) {
+            return res.error(bulkResult.error, 500);
+        }
+
+        res.success(bulkResult);
+
+    } catch (error) {
+        console.error(`Error getting bulk temperature channel data for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get bulk temperature channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/temp-stats/:channelId
+ * Get temperature channel statistics
+ */
+router.get('/:experimentId/temp-stats/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+
+        console.log(`Getting temperature channel statistics for ${experimentId}/${channelId}`);
+
+        // Get channel statistics
+        const statsResult = await temperatureService.getChannelStatistics(experimentId, channelId);
+
+        if (!statsResult.success) {
+            return res.error(statsResult.error, statsResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(statsResult);
+
+    } catch (error) {
+        console.error(`Error getting temperature channel statistics for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get temperature channel statistics: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/temp-channels
+ * Get available temperature channels information
+ */
+router.get('/:experimentId/temp-channels', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Getting available temperature channels for experiment: ${experimentId}`);
+
+        // Get metadata which includes channel information
+        const metadataResult = await temperatureService.getTemperatureMetadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        // Extract channel information
+        const channelsInfo = {
+            experimentId: experimentId,
+            available: metadataResult.channels.available,
+            byUnit: metadataResult.channels.byUnit,
+            defaults: metadataResult.channels.defaults,
+            ranges: metadataResult.channels.ranges,
+            timeRange: metadataResult.timeRange,
+            summary: {
+                temperatureChannelCount: metadataResult.channels.available.temperature.length,
+                totalChannels: metadataResult.channels.available.temperature.length,
+                duration: metadataResult.duration
+            }
+        };
+
+        res.success(channelsInfo);
+
+    } catch (error) {
+        console.error(`Error getting temperature channels info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get temperature channels information: ${error.message}`, 500);
+    }
+});
+
+/**
+ * DELETE /api/experiments/:experimentId/temp-cache
+ * Clear cached temperature data for experiment
+ */
+router.delete('/:experimentId/temp-cache', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Clearing temperature cache for experiment: ${experimentId}`);
+
+        temperatureService.clearCache(experimentId);
+
+        res.success({
+            message: `Temperature cache cleared for experiment ${experimentId}`,
+            experimentId: experimentId,
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error clearing temperature cache for ${req.params.experimentId}:`, error);
+        res.error(`Failed to clear temperature cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/temp-service/status
+ * Get temperature CSV service status and cache information
+ */
+router.get('/temp-service/status', async (req, res) => {
+    try {
+        const cacheStatus = temperatureService.getCacheStatus();
+        
+        res.success({
+            serviceName: 'Temperature CSV Service',
+            status: 'active',
+            cache: cacheStatus,
+            capabilities: {
+                supportedChannels: {
+                    welding: 'temp_welding (Schweissen Durchschn.)',
+                    sensors: 'temp_channel_1 to temp_channel_8 (Kanal 1-8 Durchschn.)'
+                },
+                supportedFormats: ['CSV with German decimal format'],
+                maxFileSize: '100MB',
+                resamplingAlgorithm: 'Simple downsampling',
+                caching: 'In-memory with TTL'
+            },
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error getting temperature service status:', error);
+        res.error(`Failed to get temperature service status: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/temp-service/clear-all-cache
+ * Clear all cached temperature data
+ */
+router.post('/temp-service/clear-all-cache', async (req, res) => {
+    try {
+        console.log('Clearing all temperature CSV cache...');
+
+        temperatureService.clearAllCache();
+
+        res.success({
+            message: 'All temperature CSV cache cleared successfully',
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error clearing all temperature cache:', error);
+        res.error(`Failed to clear all temperature cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/temp-file-info
+ * Get temperature file information without parsing (quick check)
+ */
+router.get('/:experimentId/temp-file-info', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        // Get actual file path by scanning directory
+        const filePath = await temperatureService.getActualTemperatureFilePath(experimentId);
+        const hasFile = await temperatureService.hasTemperatureFile(experimentId);
+
+        if (!hasFile || !filePath) {
+            return res.success({
+                experimentId: experimentId,
+                hasFile: false,
+                message: 'Temperature CSV file not found'
+            });
+        }
+
+        // Get basic file information
+        const fs = require('fs').promises;
+        const path = require('path');
+        const stats = await fs.stat(filePath);
+
+        res.success({
+            experimentId: experimentId,
+            hasFile: true,
+            filePath: filePath,
+            fileName: path.basename(filePath),
+            fileSize: stats.size,
+            fileSizeMB: (stats.size / 1024 / 1024).toFixed(1),
+            lastModified: stats.mtime,
+            created: stats.birthtime
+        });
+
+    } catch (error) {
+        console.error(`Error getting temperature file info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get temperature file information: ${error.message}`, 500);
     }
 });
 
