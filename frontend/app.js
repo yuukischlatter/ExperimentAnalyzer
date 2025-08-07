@@ -327,7 +327,7 @@ class ExperimentAnalyzer {
     async loadDataModulesForExperiment(experiment) {
         const moduleMap = {
             'hasBinFile': 'bin-oscilloscope',
-            //'hasAccelerationCsv': 'acceleration',
+            'hasAccelerationCsv': 'acceleration',
             'hasPositionCsv': 'distance-sensor',
             //'hasTensileCsv': 'tensile-strength',
             //'hasPhotos': 'photo-gallery',

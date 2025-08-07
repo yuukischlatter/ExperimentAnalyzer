@@ -1,0 +1,43 @@
+<!-- Acceleration Module Template - 3-Axis Acceleration Data -->
+<div class="acceleration-container">
+    
+    <!-- Module Header (standardized structure for folding) -->
+    <div class="acceleration-header card-header">
+        <div class="flex items-center justify-between">
+            <div class="acceleration-title">
+                <h3 class="card-title">Acceleration Data</h3>
+                <p class="text-sm text-secondary" data-bind="experimentInfo">3-axis acceleration measurements (X, Y, Z)</p>
+            </div>
+            <!-- Fold arrow will be inserted here by folding script -->
+        </div>
+    </div>
+    
+    <!-- Module Content -->
+    <div class="acceleration-content">
+        
+        <!-- Loading State -->
+        <div data-bind="loadingSpinner" class="loading-state hidden">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <p>Loading acceleration data...</p>
+                <p class="text-sm text-secondary">Processing 3-axis acceleration CSV file</p>
+            </div>
+        </div>
+        
+        <!-- Error State -->
+        <div data-bind="errorMessage" class="error-state hidden">
+            <div class="error-content">
+                <h4>Acceleration Data Not Available</h4>
+                <p data-bind="errorText">No acceleration CSV file found for this experiment.</p>
+                <p class="text-xs text-muted">Expected file patterns: {experimentId}_beschleuinigung.csv or daq_download.csv</p>
+            </div>
+        </div>
+        
+        <!-- Plot Container -->
+        <div data-bind="plotContainer" class="plot-container hidden">
+            <div data-bind="accelerationPlot" id="acceleration-plot" class="acceleration-plot"></div>
+        </div>
+        
+    </div>
+    
+</div>
