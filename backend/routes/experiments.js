@@ -11,6 +11,7 @@ const StartupService = require('../services/StartupService');
 const BinaryParserService = require('../services/BinaryParserService');
 const TemperatureCsvService = require('../services/TemperatureCsvService');
 const PositionCsvService = require('../services/PositionCsvService');
+const AccelerationCsvService = require('../services/AccelerationCsvService');
 const { responseMiddleware } = require('../models/ApiResponse');
 
 // Apply response middleware to all routes in this router
@@ -20,6 +21,7 @@ router.use(responseMiddleware);
 const binaryService = new BinaryParserService();
 const temperatureService = new TemperatureCsvService();
 const positionService = new PositionCsvService();
+const accelerationService = new AccelerationCsvService();
 
 // #region EXISTING EXPERIMENT ROUTES
 
@@ -67,6 +69,13 @@ router.get('/status', async (req, res) => {
             statusResult.status.positionCsvService = {
                 cachedExperiments: positionCacheStatus.totalCachedExperiments,
                 cacheTimeout: positionCacheStatus.cacheTimeoutMs
+            };
+
+            // Add acceleration service status
+            const accelerationCacheStatus = accelerationService.getCacheStatus();
+            statusResult.status.accelerationCsvService = {
+                cachedExperiments: accelerationCacheStatus.totalCachedExperiments,
+                cacheTimeout: accelerationCacheStatus.cacheTimeoutMs
             };
             
             res.success(statusResult.status);
@@ -126,6 +135,7 @@ router.post('/rescan', async (req, res) => {
                 binaryService.clearAllCache();
                 temperatureService.clearAllCache();
                 positionService.clearAllCache();
+                accelerationService.clearAllCache();
             }
             
             res.success({
@@ -1301,6 +1311,396 @@ router.get('/:experimentId/pos-file-info', async (req, res) => {
     } catch (error) {
         console.error(`Error getting position file info for ${req.params.experimentId}:`, error);
         res.error(`Failed to get position file information: ${error.message}`, 500);
+    }
+});
+
+// #endregion
+
+// #region ACCELERATION CSV DATA ROUTES
+
+/**
+ * GET /api/experiments/:experimentId/acc-metadata
+ * Get acceleration CSV file metadata and channel information
+ */
+router.get('/:experimentId/acc-metadata', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { forceRefresh = false } = req.query;
+        const forceRefreshBool = forceRefresh === 'true' || forceRefresh === true;
+
+        console.log(`Getting acceleration metadata for experiment: ${experimentId}`);
+
+        // Check if experiment has acceleration file
+        const hasAcceleration = await accelerationService.hasAccelerationFile(experimentId);
+        if (!hasAcceleration) {
+            return res.error(`No acceleration CSV file found for experiment ${experimentId}`, 404);
+        }
+
+        // Get comprehensive metadata
+        const metadataResult = await accelerationService.getAccelerationMetadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        res.success({
+            experimentId: experimentId,
+            hasValidAccelerationFile: true,
+            ...metadataResult
+        });
+
+    } catch (error) {
+        console.error(`Error getting acceleration metadata for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get acceleration metadata: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/acc-data/:channelId
+ * Get single acceleration channel data with resampling
+ * Supports: acc_x, acc_y, acc_z, acc_magnitude
+ */
+router.get('/:experimentId/acc-data/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+        const { 
+            start = 0, 
+            end = null, 
+            maxPoints = 2000 
+        } = req.query;
+
+        const startTime = parseFloat(start);
+        const endTime = end ? parseFloat(end) : null;
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters
+        if (isNaN(startTime) || startTime < 0) {
+            return res.error('Invalid start time parameter', 400);
+        }
+        
+        if (endTime !== null && (isNaN(endTime) || endTime <= startTime)) {
+            return res.error('Invalid end time parameter', 400);
+        }
+        
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
+            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
+        }
+
+        // Validate channel ID
+        const validChannels = ['acc_x', 'acc_y', 'acc_z', 'acc_magnitude'];
+        if (!validChannels.includes(channelId)) {
+            return res.error(`Invalid channel ID: ${channelId}. Supported channels: ${validChannels.join(', ')}`, 400);
+        }
+
+        // Get channel data
+        const channelResult = await accelerationService.getChannelData(experimentId, channelId, {
+            startTime: startTime,
+            endTime: endTime,
+            maxPoints: maxPointsInt
+        });
+
+        if (!channelResult.success) {
+            return res.error(channelResult.error, channelResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(channelResult);
+
+    } catch (error) {
+        console.error(`Error getting acceleration channel data for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get acceleration channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/:experimentId/acc-data/bulk
+ * Get multiple acceleration channels data efficiently
+ */
+router.post('/:experimentId/acc-data/bulk', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { 
+            channelIds, 
+            startTime = 0, 
+            endTime = null, 
+            maxPoints = 2000 
+        } = req.body;
+
+        // Validate request body
+        if (!Array.isArray(channelIds)) {
+            return res.error('channelIds must be an array', 400);
+        }
+
+        if (channelIds.length === 0) {
+            return res.error('channelIds cannot be empty', 400);
+        }
+
+        if (channelIds.length > 10) {
+            return res.error('Maximum 10 channels per request', 400);
+        }
+
+        // Validate channel IDs
+        const validChannels = ['acc_x', 'acc_y', 'acc_z', 'acc_magnitude'];
+        const invalidChannels = channelIds.filter(id => !validChannels.includes(id));
+        if (invalidChannels.length > 0) {
+            return res.error(`Invalid channel IDs: ${invalidChannels.join(', ')}. Supported channels: ${validChannels.join(', ')}`, 400);
+        }
+
+        const startTimeFloat = parseFloat(startTime);
+        const endTimeFloat = endTime ? parseFloat(endTime) : null;
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters
+        if (isNaN(startTimeFloat) || startTimeFloat < 0) {
+            return res.error('Invalid startTime parameter', 400);
+        }
+        
+        if (endTimeFloat !== null && (isNaN(endTimeFloat) || endTimeFloat <= startTimeFloat)) {
+            return res.error('Invalid endTime parameter', 400);
+        }
+        
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
+            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
+        }
+
+        console.log(`Bulk acceleration channel request for ${experimentId}: ${channelIds.length} channels`);
+
+        // Get bulk channel data
+        const bulkResult = await accelerationService.getBulkChannelData(experimentId, channelIds, {
+            startTime: startTimeFloat,
+            endTime: endTimeFloat,
+            maxPoints: maxPointsInt
+        });
+
+        if (!bulkResult.success) {
+            return res.error(bulkResult.error, 500);
+        }
+
+        res.success(bulkResult);
+
+    } catch (error) {
+        console.error(`Error getting bulk acceleration channel data for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get bulk acceleration channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/acc-stats/:channelId
+ * Get acceleration channel statistics
+ */
+router.get('/:experimentId/acc-stats/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+
+        console.log(`Getting acceleration channel statistics for ${experimentId}/${channelId}`);
+
+        // Validate channel ID
+        const validChannels = ['acc_x', 'acc_y', 'acc_z', 'acc_magnitude'];
+        if (!validChannels.includes(channelId)) {
+            return res.error(`Invalid channel ID: ${channelId}. Supported channels: ${validChannels.join(', ')}`, 400);
+        }
+
+        // Get channel statistics
+        const statsResult = await accelerationService.getChannelStatistics(experimentId, channelId);
+
+        if (!statsResult.success) {
+            return res.error(statsResult.error, statsResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(statsResult);
+
+    } catch (error) {
+        console.error(`Error getting acceleration channel statistics for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get acceleration channel statistics: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/acc-channels
+ * Get available acceleration channels information
+ */
+router.get('/:experimentId/acc-channels', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Getting available acceleration channels for experiment: ${experimentId}`);
+
+        // Get metadata which includes channel information
+        const metadataResult = await accelerationService.getAccelerationMetadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        // Extract channel information
+        const channelsInfo = {
+            experimentId: experimentId,
+            available: metadataResult.channels.available,
+            byUnit: metadataResult.channels.byUnit,
+            defaults: metadataResult.channels.defaults,
+            ranges: metadataResult.channels.ranges,
+            timeRange: metadataResult.timeRange,
+            summary: {
+                accelerationChannelCount: metadataResult.channels.available.acceleration.length,
+                totalChannels: metadataResult.channels.available.acceleration.length,
+                duration: metadataResult.duration,
+                samplingInfo: metadataResult.accelerationInfo.samplingInfo,
+                supportsMagnitudeCalculation: metadataResult.accelerationInfo.supportsMagnitudeCalculation
+            }
+        };
+
+        res.success(channelsInfo);
+
+    } catch (error) {
+        console.error(`Error getting acceleration channels info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get acceleration channels information: ${error.message}`, 500);
+    }
+});
+
+/**
+ * DELETE /api/experiments/:experimentId/acc-cache
+ * Clear cached acceleration data for experiment
+ */
+router.delete('/:experimentId/acc-cache', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Clearing acceleration cache for experiment: ${experimentId}`);
+
+        accelerationService.clearCache(experimentId);
+
+        res.success({
+            message: `Acceleration cache cleared for experiment ${experimentId}`,
+            experimentId: experimentId,
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error clearing acceleration cache for ${req.params.experimentId}:`, error);
+        res.error(`Failed to clear acceleration cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/acc-service/status
+ * Get acceleration CSV service status and cache information
+ */
+router.get('/acc-service/status', async (req, res) => {
+    try {
+        const cacheStatus = accelerationService.getCacheStatus();
+        
+        res.success({
+            serviceName: 'Acceleration CSV Service',
+            status: 'active',
+            cache: cacheStatus,
+            capabilities: {
+                supportedChannels: {
+                    axes: 'acc_x, acc_y, acc_z (3-axis acceleration)',
+                    calculated: 'acc_magnitude (sqrt(x² + y² + z²))'
+                },
+                supportedFormats: [
+                    'CSV with time column (4 columns): Time[s], X[m/s²], Y[m/s²], Z[m/s²]',
+                    'CSV without time (3 columns): X[m/s²], Y[m/s²], Z[m/s²] - generates 10kHz timeline'
+                ],
+                filePatterns: [
+                    '{experimentId}_beschleuinigung.csv (primary)',
+                    'daq_download.csv (fallback)'
+                ],
+                dataProcessing: {
+                    samplingRates: 'Auto-detected from time data or 10kHz default',
+                    units: 'm/s² (meters per second squared)',
+                    timeBase: 'microseconds (µs)',
+                    specialFeatures: 'Magnitude calculation, RMS statistics, vibration analysis'
+                },
+                maxFileSize: '50MB',
+                resamplingAlgorithm: 'Multi-tier: Decimation, Min-Max, RMS based on oversampling ratio',
+                caching: 'In-memory with TTL'
+            },
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error getting acceleration service status:', error);
+        res.error(`Failed to get acceleration service status: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/acc-service/clear-all-cache
+ * Clear all cached acceleration data
+ */
+router.post('/acc-service/clear-all-cache', async (req, res) => {
+    try {
+        console.log('Clearing all acceleration CSV cache...');
+
+        accelerationService.clearAllCache();
+
+        res.success({
+            message: 'All acceleration CSV cache cleared successfully',
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error clearing all acceleration cache:', error);
+        res.error(`Failed to clear all acceleration cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/acc-file-info
+ * Get acceleration file information without parsing (quick check)
+ */
+router.get('/:experimentId/acc-file-info', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        // Get actual file path by scanning directory
+        const filePath = await accelerationService.getActualAccelerationFilePath(experimentId);
+        const hasFile = await accelerationService.hasAccelerationFile(experimentId);
+
+        if (!hasFile || !filePath) {
+            return res.success({
+                experimentId: experimentId,
+                hasFile: false,
+                message: 'Acceleration CSV file not found',
+                expectedPatterns: [
+                    `${experimentId.toLowerCase()}_beschleuinigung.csv`,
+                    'daq_download.csv'
+                ]
+            });
+        }
+
+        // Get basic file information
+        const fs = require('fs').promises;
+        const path = require('path');
+        const stats = await fs.stat(filePath);
+
+        res.success({
+            experimentId: experimentId,
+            hasFile: true,
+            filePath: filePath,
+            fileName: path.basename(filePath),
+            fileSize: stats.size,
+            fileSizeMB: (stats.size / 1024 / 1024).toFixed(1),
+            lastModified: stats.mtime,
+            created: stats.birthtime,
+            accelerationInfo: {
+                expectedChannels: ['X-axis', 'Y-axis', 'Z-axis'],
+                supportedFormats: [
+                    '4-column: Time, X, Y, Z',
+                    '3-column: X, Y, Z (synthetic time)'
+                ],
+                unit: 'm/s²',
+                typicalSamplingRates: ['1kHz - 25kHz'],
+                filePatterns: {
+                    primary: `${experimentId}_beschleuinigung.csv`,
+                    fallback: 'daq_download.csv'
+                }
+            }
+        });
+
+    } catch (error) {
+        console.error(`Error getting acceleration file info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get acceleration file information: ${error.message}`, 500);
     }
 });
 
