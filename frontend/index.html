@@ -53,53 +53,53 @@
                     <div class="data-modules-grid">
 
                         <!-- Binary Oscilloscope Module -->
-                        <div id="bin-oscilloscope-container" class="data-module-slot hidden">
+                        <div id="bin-oscilloscope-container" class="data-module-slot foldable-module hidden">
                             <!-- bin-oscilloscope module loads here -->
                         </div>
 
+                        <!-- Ambient Temperature Module -->
+                        <div id="ambient-temperature-container" class="data-module-slot foldable-module hidden">
+                            <!-- ambient-temperature module loads here -->
+                        </div>
+
                         <!-- Acceleration Data Module -->
-                        <div id="acceleration-container" class="data-module-slot hidden">
+                        <div id="acceleration-container" class="data-module-slot foldable-module hidden">
                             <!-- acceleration module loads here -->
                         </div>
 
                         <!-- Position Sensor Module -->
-                        <div id="position-container" class="data-module-slot hidden">
+                        <div id="position-container" class="data-module-slot foldable-module hidden">
                             <!-- position module loads here -->
                         </div>
 
                         <!-- Tensile Strength Module -->
-                        <div id="tensile-strength-container" class="data-module-slot hidden">
+                        <div id="tensile-strength-container" class="data-module-slot foldable-module hidden">
                             <!-- tensile-strength module loads here -->
                         </div>
 
                         <!-- Photo Gallery Module -->
-                        <div id="photo-gallery-container" class="data-module-slot hidden">
+                        <div id="photo-gallery-container" class="data-module-slot foldable-module hidden">
                             <!-- photo-gallery module loads here -->
                         </div>
 
                         <!-- Thermal IR Module -->
-                        <div id="thermal-ir-container" class="data-module-slot hidden">
+                        <div id="thermal-ir-container" class="data-module-slot foldable-module hidden">
                             <!-- thermal-ir module loads here -->
                         </div>
 
                         <!-- TCP5 Oscilloscope Module -->
-                        <div id="tcp5-oscilloscope-container" class="data-module-slot hidden">
+                        <div id="tcp5-oscilloscope-container" class="data-module-slot foldable-module hidden">
                             <!-- tcp5-oscilloscope module loads here -->
                         </div>
 
                         <!-- Weld Journal Module -->
-                        <div id="weld-journal-container" class="data-module-slot hidden">
+                        <div id="weld-journal-container" class="data-module-slot foldable-module hidden">
                             <!-- weld-journal module loads here -->
                         </div>
 
                         <!-- Crown Measurements Module -->
-                        <div id="crown-measurements-container" class="data-module-slot hidden">
+                        <div id="crown-measurements-container" class="data-module-slot foldable-module hidden">
                             <!-- crown-measurements module loads here -->
-                        </div>
-
-                        <!-- Ambient Temperature Module -->
-                        <div id="ambient-temperature-container" class="data-module-slot hidden">
-                            <!-- ambient-temperature module loads here -->
                         </div>
 
                     </div>
@@ -215,9 +215,10 @@
     margin-bottom: var(--spacing-xl);
 }
 
+/* UPDATED: Changed to single column layout for vertical stacking */
 .data-modules-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+    grid-template-columns: 1fr; /* Single column instead of auto-fit minmax */
     gap: var(--spacing-lg);
     margin-top: var(--spacing-lg);
 }
@@ -235,6 +236,7 @@
     border-radius: var(--border-radius);
     box-shadow: var(--shadow-sm);
     min-height: 300px;
+    width: 100%; /* Ensure full width */
 }
 
 .app-footer {
@@ -283,4 +285,216 @@
     color: var(--status-error);
     margin-bottom: var(--spacing-md);
 }
+
+/* Responsive adjustments for larger screens */
+@media (min-width: 1400px) {
+    .data-modules-grid {
+        gap: var(--spacing-xl); /* Larger gaps on bigger screens */
+    }
+}
+
+/* === FOLDABLE MODULE FUNCTIONALITY === */
+
+/* Foldable module styles */
+.foldable-module {
+    transition: all var(--transition-normal);
+}
+
+.foldable-module .card-header {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color var(--transition-fast);
+    position: relative;
+}
+
+.foldable-module .card-header:hover {
+    background-color: rgba(var(--schlatter-blue-rgb), 0.95);
+}
+
+/* Fold arrow styles */
+.fold-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.2);
+    transition: all var(--transition-fast);
+    color: var(--text-white);
+}
+
+.fold-arrow:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+    transform: scale(1.1);
+}
+
+.fold-arrow svg {
+    transition: transform var(--transition-normal);
+    width: 16px;
+    height: 16px;
+}
+
+/* Collapsed state */
+.foldable-module.collapsed .fold-arrow svg {
+    transform: rotate(-90deg);
+}
+
+.foldable-module.collapsed .module-content {
+    max-height: 0;
+    overflow: hidden;
+    padding-top: 0;
+    padding-bottom: 0;
+}
+
+/* Module content transitions */
+.module-content {
+    max-height: 1000px; /* Large enough for content */
+    overflow: hidden;
+    transition: all var(--transition-slow);
+}
+
+/* Collapsed indicator */
+.foldable-module.collapsed .card-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, 
+        rgba(255, 255, 255, 0.3) 0%, 
+        rgba(255, 255, 255, 0.6) 50%, 
+        rgba(255, 255, 255, 0.3) 100%);
+}
+
+/* Print optimization */
+@media print {
+    .data-modules-grid {
+        display: block; /* Stack everything for print */
+    }
+    
+    .data-module-slot {
+        page-break-inside: avoid;
+        margin-bottom: var(--spacing-lg);
+    }
+    
+    /* Expand all modules for print */
+    .foldable-module.collapsed .module-content {
+        max-height: none !important;
+        overflow: visible !important;
+        padding: var(--spacing-md) !important;
+    }
+    
+    .fold-arrow {
+        display: none !important;
+    }
+}
 </style>
+
+<script>
+// Global Foldable Module Functionality
+document.addEventListener('DOMContentLoaded', function() {
+    
+    // Initialize foldable functionality after modules are loaded
+    function initializeFoldableModules() {
+        const foldableModules = document.querySelectorAll('.foldable-module');
+        
+        foldableModules.forEach(moduleContainer => {
+            // Skip if already initialized
+            if (moduleContainer.hasAttribute('data-foldable-initialized')) {
+                return;
+            }
+            
+            // Find the header and content within the module
+            const header = moduleContainer.querySelector('.card-header');
+            const content = moduleContainer.querySelector('.card-body, .bin-oscilloscope-content, .ambient-temperature-content, .acceleration-content, .position-content, .tensile-content, .photo-gallery-content, .thermal-content, .tcp5-content, .weld-journal-content, .crown-measurements-content');
+            
+            if (header && content) {
+                // Add fold arrow to header if it doesn't exist
+                if (!header.querySelector('.fold-arrow')) {
+                    const titleDiv = header.querySelector('div');
+                    if (titleDiv) {
+                        titleDiv.style.display = 'flex';
+                        titleDiv.style.alignItems = 'center';
+                        titleDiv.style.justifyContent = 'space-between';
+                        
+                        const arrowDiv = document.createElement('div');
+                        arrowDiv.className = 'fold-arrow';
+                        arrowDiv.innerHTML = `
+                            <svg width="16" height="16" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                            </svg>
+                        `;
+                        titleDiv.appendChild(arrowDiv);
+                    }
+                }
+                
+                // Add module-content class for consistent styling
+                content.classList.add('module-content');
+                
+                // Add click handler to header
+                header.addEventListener('click', function() {
+                    moduleContainer.classList.toggle('collapsed');
+                    
+                    // Store collapse state in localStorage
+                    const moduleId = moduleContainer.id;
+                    const isCollapsed = moduleContainer.classList.contains('collapsed');
+                    localStorage.setItem(`module-${moduleId}-collapsed`, isCollapsed);
+                });
+                
+                // Restore collapse state from localStorage
+                const moduleId = moduleContainer.id;
+                const wasCollapsed = localStorage.getItem(`module-${moduleId}-collapsed`) === 'true';
+                if (wasCollapsed) {
+                    moduleContainer.classList.add('collapsed');
+                }
+                
+                // Mark as initialized
+                moduleContainer.setAttribute('data-foldable-initialized', 'true');
+            }
+        });
+    }
+    
+    // Initialize immediately and also after a delay to catch dynamically loaded modules
+    initializeFoldableModules();
+    setTimeout(initializeFoldableModules, 1000);
+    setTimeout(initializeFoldableModules, 3000);
+    
+    // Watch for new modules being added
+    const observer = new MutationObserver(function(mutations) {
+        mutations.forEach(function(mutation) {
+            if (mutation.type === 'childList') {
+                mutation.addedNodes.forEach(function(node) {
+                    if (node.nodeType === Node.ELEMENT_NODE && 
+                        (node.classList.contains('foldable-module') || 
+                         node.querySelector('.foldable-module'))) {
+                        setTimeout(initializeFoldableModules, 100);
+                    }
+                });
+            }
+        });
+    });
+    
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+    
+    // Global function to expand all modules
+    window.expandAllModules = function() {
+        document.querySelectorAll('.foldable-module.collapsed').forEach(module => {
+            module.classList.remove('collapsed');
+            localStorage.setItem(`module-${module.id}-collapsed`, false);
+        });
+    };
+    
+    // Global function to collapse all modules
+    window.collapseAllModules = function() {
+        document.querySelectorAll('.foldable-module:not(.collapsed)').forEach(module => {
+            module.classList.add('collapsed');
+            localStorage.setItem(`module-${module.id}-collapsed`, true);
+        });
+    };
+});
+</script>

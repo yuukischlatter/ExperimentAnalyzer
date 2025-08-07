@@ -1,0 +1,41 @@
+<!-- Ambient Temperature Module Template -->
+<div class="ambient-temperature-container">
+    
+    <!-- Module Header (matches experiment-browser and bin-oscilloscope pattern) -->
+    <div class="ambient-temperature-header card-header">
+        <div class="flex items-center justify-between">
+            <div class="ambient-temperature-title">
+                <h3 class="card-title">Ambient Temperature Data</h3>
+                <p class="text-sm text-secondary" data-bind="experimentInfo">Temperature sensor measurements during welding process</p>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Module Content -->
+    <div class="ambient-temperature-content">
+        
+        <!-- Loading State (reuse existing pattern) -->
+        <div data-bind="loadingSpinner" class="loading-state hidden">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <p>Loading temperature data...</p>
+                <p class="text-sm text-secondary">Processing temperature CSV file and sensor channels</p>
+            </div>
+        </div>
+        
+        <!-- Error State (reuse existing pattern) -->
+        <div data-bind="errorMessage" class="error-state hidden">
+            <div class="error-content">
+                <h4>Temperature Data Not Available</h4>
+                <p data-bind="errorText">No temperature CSV file found for this experiment.</p>
+            </div>
+        </div>
+        
+        <!-- Plot Container -->
+        <div data-bind="plotContainer" class="plot-container hidden">
+            <div data-bind="temperaturePlot" id="temperature-plot" class="temperature-plot"></div>
+        </div>
+        
+    </div>
+    
+</div>

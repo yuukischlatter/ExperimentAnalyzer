@@ -310,7 +310,7 @@ class ExperimentAnalyzer {
             //'hasTcp5File': 'tcp5-oscilloscope',
             //'hasWeldJournal': 'weld-journal',
             //'hasCrownMeasurements': 'crown-measurements',
-            //'hasAmbientTemperature': 'ambient-temperature'
+            'hasAmbientTemperature': 'ambient-temperature'
         };
         
         const loadPromises = [];
