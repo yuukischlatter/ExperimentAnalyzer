@@ -13,6 +13,7 @@ const TemperatureCsvService = require('../services/TemperatureCsvService');
 const PositionCsvService = require('../services/PositionCsvService');
 const AccelerationCsvService = require('../services/AccelerationCsvService');
 const TensileCsvService = require('../services/TensileCsvService');
+const PhotoService = require('../services/PhotoService');
 const { responseMiddleware } = require('../models/ApiResponse');
 
 // Apply response middleware to all routes in this router
@@ -24,6 +25,7 @@ const temperatureService = new TemperatureCsvService();
 const positionService = new PositionCsvService();
 const accelerationService = new AccelerationCsvService();
 const tensileService = new TensileCsvService();
+const photoService = new PhotoService();
 
 // #region EXISTING EXPERIMENT ROUTES
 
@@ -85,7 +87,14 @@ router.get('/status', async (req, res) => {
             statusResult.status.tensileCsvService = {                   // ADD THESE LINES
                 cachedExperiments: tensileCacheStatus.totalCachedExperiments,
                 cacheTimeout: tensileCacheStatus.cacheTimeoutMs
-            };   
+            }; 
+            
+            // Add photo service status
+            const photoCacheStatus = photoService.getCacheStatus(); // ADD THESE LINES
+            statusResult.status.photoService = {                    // ADD THESE LINES
+                cachedExperiments: photoCacheStatus.totalCachedExperiments,
+                cacheTimeout: photoCacheStatus.cacheTimeoutMs
+            }; 
             
             res.success(statusResult.status);
         } else {
@@ -146,6 +155,7 @@ router.post('/rescan', async (req, res) => {
                 positionService.clearAllCache();
                 accelerationService.clearAllCache();
                 tensileService.clearAllCache();
+                photoService.clearAllCache();
             }
             
             res.success({
@@ -2104,6 +2114,272 @@ router.get('/:experimentId/tensile-file-info', async (req, res) => {
     } catch (error) {
         console.error(`Error getting tensile file info for ${req.params.experimentId}:`, error);
         res.error(`Failed to get tensile file information: ${error.message}`, 500);
+    }
+});
+
+// #endregion
+
+// #region PHOTO/IMAGE DATA ROUTES
+
+/**
+ * GET /api/experiments/:experimentId/photos
+ * Get all photos metadata for an experiment
+ */
+router.get('/:experimentId/photos', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { forceRefresh = false } = req.query;
+        const forceRefreshBool = forceRefresh === 'true' || forceRefresh === true;
+
+        console.log(`Getting photos for experiment: ${experimentId}`);
+
+        // Get photos metadata
+        const photosResult = await photoService.getPhotosMetadata(experimentId);
+        
+        if (!photosResult.success) {
+            return res.error(photosResult.error, photosResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success({
+            experimentId: experimentId,
+            hasPhotos: true,
+            ...photosResult
+        });
+
+    } catch (error) {
+        console.error(`Error getting photos for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get photos: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/photos/metadata
+ * Get photos metadata only (lightweight)
+ */
+router.get('/:experimentId/photos/metadata', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Getting photos metadata for experiment: ${experimentId}`);
+
+        // Get lightweight metadata
+        const metadataResult = await photoService.getPhotosMetadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, metadataResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(metadataResult);
+
+    } catch (error) {
+        console.error(`Error getting photos metadata for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get photos metadata: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/photos/:filename
+ * Serve raw image file
+ */
+router.get('/:experimentId/photos/:filename', async (req, res) => {
+    try {
+        const { experimentId, filename } = req.params;
+
+        console.log(`Serving photo: ${experimentId}/${filename}`);
+
+        // Validate filename (security check)
+        if (!filename || filename.includes('..') || filename.includes('/') || filename.includes('\\')) {
+            return res.error('Invalid filename', 400);
+        }
+
+        // Get photo file path
+        const photoPath = await photoService.getPhotoFilePath(experimentId, filename);
+        
+        if (!photoPath) {
+            return res.error(`Photo not found: ${filename}`, 404);
+        }
+
+        // Verify file exists and get stats
+        let stats;
+        try {
+            stats = await require('fs').promises.stat(photoPath);
+        } catch (error) {
+            console.error(`Photo file not accessible: ${photoPath}`, error);
+            return res.error(`Photo file not accessible: ${filename}`, 404);
+        }
+
+        // Determine content type from extension
+        const ext = require('path').extname(photoPath).toLowerCase();
+        const contentTypes = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.bmp': 'image/bmp',
+            '.tiff': 'image/tiff',
+            '.tif': 'image/tiff',
+            '.gif': 'image/gif'
+        };
+        
+        const contentType = contentTypes[ext] || 'application/octet-stream';
+
+        // Set appropriate headers
+        res.set({
+            'Content-Type': contentType,
+            'Content-Length': stats.size,
+            'Last-Modified': stats.mtime.toUTCString(),
+            'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
+            'Content-Disposition': `inline; filename="${filename}"`
+        });
+
+        // Stream the file
+        const fs = require('fs');
+        const stream = fs.createReadStream(photoPath);
+        
+        stream.on('error', (error) => {
+            console.error(`Error streaming photo ${photoPath}:`, error);
+            if (!res.headersSent) {
+                res.error('Failed to stream photo', 500);
+            }
+        });
+
+        stream.pipe(res);
+
+    } catch (error) {
+        console.error(`Error serving photo ${req.params.experimentId}/${req.params.filename}:`, error);
+        if (!res.headersSent) {
+            res.error(`Failed to serve photo: ${error.message}`, 500);
+        }
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/photos-info
+ * Get photo information without processing (quick check)
+ */
+router.get('/:experimentId/photos-info', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Getting photos info for experiment: ${experimentId}`);
+
+        // Check if experiment has photos
+        const hasPhotos = await photoService.hasPhotos(experimentId);
+
+        if (!hasPhotos) {
+            return res.success({
+                experimentId: experimentId,
+                hasPhotos: false,
+                message: 'No photo files found for this experiment',
+                supportedFormats: ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.gif']
+            });
+        }
+
+        // Get basic info without full scanning
+        const experimentFolder = require('path').join(require('../config/config').experiments.rootPath, experimentId);
+        let folderStats = null;
+        
+        try {
+            folderStats = await require('fs').promises.stat(experimentFolder);
+        } catch (error) {
+            return res.error('Experiment folder not found', 404);
+        }
+
+        res.success({
+            experimentId: experimentId,
+            hasPhotos: true,
+            experimentFolder: experimentFolder,
+            folderLastModified: folderStats.mtime,
+            supportedFormats: ['.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.gif'],
+            message: 'Photos available - use /photos endpoint for details'
+        });
+
+    } catch (error) {
+        console.error(`Error getting photos info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get photos information: ${error.message}`, 500);
+    }
+});
+
+/**
+ * DELETE /api/experiments/:experimentId/photos-cache
+ * Clear cached photo data for experiment
+ */
+router.delete('/:experimentId/photos-cache', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Clearing photo cache for experiment: ${experimentId}`);
+
+        photoService.clearCache(experimentId);
+
+        res.success({
+            message: `Photo cache cleared for experiment ${experimentId}`,
+            experimentId: experimentId,
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error clearing photo cache for ${req.params.experimentId}:`, error);
+        res.error(`Failed to clear photo cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/photos-service/status
+ * Get photo service status and cache information
+ */
+router.get('/photos-service/status', async (req, res) => {
+    try {
+        const cacheStatus = photoService.getCacheStatus();
+        
+        res.success({
+            serviceName: 'Photo Service',
+            status: 'active',
+            cache: cacheStatus,
+            capabilities: {
+                supportedFormats: {
+                    jpeg: 'JPEG images (.jpg, .jpeg)',
+                    png: 'PNG images (.png)',
+                    bitmap: 'Bitmap images (.bmp)', 
+                    tiff: 'TIFF images (.tiff, .tif)',
+                    gif: 'GIF images (.gif)'
+                },
+                features: [
+                    'Recursive folder scanning',
+                    'File metadata extraction',
+                    'Direct image serving',
+                    'Caching with TTL',
+                    'Security validation'
+                ],
+                maxFileSize: 'No limit (direct streaming)',
+                caching: 'Metadata only - in-memory with TTL'
+            },
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error getting photo service status:', error);
+        res.error(`Failed to get photo service status: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/photos-service/clear-all-cache
+ * Clear all cached photo data
+ */
+router.post('/photos-service/clear-all-cache', async (req, res) => {
+    try {
+        console.log('Clearing all photo cache...');
+
+        photoService.clearAllCache();
+
+        res.success({
+            message: 'All photo cache cleared successfully',
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error clearing all photo cache:', error);
+        res.error(`Failed to clear all photo cache: ${error.message}`, 500);
     }
 });
 

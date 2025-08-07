@@ -1,0 +1,106 @@
+<!-- Photo Gallery Module Template - Experiment Photos with Grid + Lightbox -->
+<div class="photo-gallery-container">
+    
+    <!-- Module Header (standardized structure for folding) -->
+    <div class="photo-gallery-header card-header">
+        <div class="flex items-center justify-between">
+            <div class="photo-gallery-title">
+                <h3 class="card-title">Experiment Photos</h3>
+                <p class="text-sm text-secondary" data-bind="experimentInfo">Visual documentation of welding process</p>
+            </div>
+            <!-- Fold arrow will be inserted here by folding script -->
+        </div>
+    </div>
+    
+    <!-- Module Content -->
+    <div class="photo-gallery-content">
+        
+        <!-- Loading State -->
+        <div data-bind="loadingSpinner" class="loading-state hidden">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <p>Loading experiment photos...</p>
+                <p class="text-sm text-secondary">Scanning for image files and generating thumbnails</p>
+            </div>
+        </div>
+        
+        <!-- Error State -->
+        <div data-bind="errorMessage" class="error-state hidden">
+            <div class="error-content">
+                <h4>Photos Not Available</h4>
+                <p data-bind="errorText">No photo files found for this experiment.</p>
+                <p class="text-xs text-muted">Supported formats: JPG, PNG, BMP, TIFF, GIF</p>
+            </div>
+        </div>
+        
+        <!-- Photos Grid Container -->
+        <div data-bind="photosContainer" class="photos-container hidden">
+                        
+            <!-- Photos Grid -->
+            <div data-bind="photosGrid" class="photos-grid">
+                <!-- Photo thumbnails will be dynamically inserted here -->
+            </div>
+            
+        </div>
+        
+    </div>
+    
+</div>
+
+<!-- Lightbox Modal (Full-size Photo Viewer) -->
+<div data-bind="lightboxModal" class="lightbox-modal hidden">
+    <div class="lightbox-overlay"></div>
+    <div class="lightbox-container">
+        
+        <!-- Lightbox Header -->
+        <div class="lightbox-header">
+            <div class="lightbox-photo-info">
+                <h4 data-bind="lightboxTitle" class="lightbox-title">Photo Title</h4>
+                <p data-bind="lightboxMeta" class="lightbox-meta">Photo metadata</p>
+            </div>
+            <button data-bind="lightboxClose" class="lightbox-close-btn" title="Close (ESC)">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+        </div>
+        
+        <!-- Lightbox Content -->
+        <div class="lightbox-content">
+            
+            <!-- Navigation Arrows -->
+            <button data-bind="lightboxPrev" class="lightbox-nav-btn lightbox-prev" title="Previous Photo (←)">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15,18 9,12 15,6"></polyline>
+                </svg>
+            </button>
+            
+            <!-- Photo Display -->
+            <div class="lightbox-photo-wrapper">
+                <img data-bind="lightboxImage" class="lightbox-photo" src="" alt="Experiment Photo">
+                <div data-bind="lightboxLoading" class="lightbox-loading hidden">
+                    <div class="loading-spinner"></div>
+                    <p>Loading full-size image...</p>
+                </div>
+            </div>
+            
+            <button data-bind="lightboxNext" class="lightbox-nav-btn lightbox-next" title="Next Photo (→)">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9,18 15,12 9,6"></polyline>
+                </svg>
+            </button>
+            
+        </div>
+        
+            <!-- Lightbox Footer -->
+            <div class="lightbox-footer">
+                <div class="lightbox-photo-counter">
+                    <span data-bind="lightboxCounter" class="photo-counter">1 of 5</span>
+                </div>
+                <!-- lightbox-actions div removed -->
+            </div>
+        </div>
+        
+    </div>
+</div>

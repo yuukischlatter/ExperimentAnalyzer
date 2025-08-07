@@ -326,16 +326,16 @@ class ExperimentAnalyzer {
      */
     async loadDataModulesForExperiment(experiment) {
         const moduleMap = {
-            'hasBinFile': 'bin-oscilloscope',
             'hasAccelerationCsv': 'acceleration',
             'hasPositionCsv': 'distance-sensor',
             'hasTensileCsv': 'tensile-strength',
-            //'hasPhotos': 'photo-gallery',
+            'hasPhotos': 'photo-gallery',
             //'hasThermalRavi': 'thermal-ir',
             //'hasTcp5File': 'tcp5-oscilloscope',
             //'hasWeldJournal': 'weld-journal',
             //'hasCrownMeasurements': 'crown-measurements',
-            'hasAmbientTemperature': 'ambient-temperature'
+            'hasAmbientTemperature': 'ambient-temperature',
+            'hasBinFile': 'bin-oscilloscope'
         };
         
         const loadPromises = [];

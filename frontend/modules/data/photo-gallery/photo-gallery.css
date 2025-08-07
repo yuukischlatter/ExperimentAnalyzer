@@ -1,0 +1,561 @@
+/* ===================================================================== */
+/* PHOTO-GALLERY.CSS - Desktop Only with Folding Support */
+/* ===================================================================== */
+
+/**
+ * Photo Gallery Module - Styling
+ * Desktop-only version with enhanced folding support
+ * Features: Grid layout + Lightbox modal for photo viewing
+ * Professional Schlatter blue theme with photo-specific styling
+ * UPDATED: Uses generic .module-content for folding compatibility
+ * NO mobile/responsive code
+ */
+
+/* === MODULE CONTAINER === */
+.photo-gallery-container {
+    background-color: var(--bg-white);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+}
+
+/* === HEADER SECTION === */
+.photo-gallery-header {
+    background-color: var(--schlatter-blue);
+    color: var(--text-white);
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: none;
+    transition: background-color var(--transition-fast);
+}
+
+.photo-gallery-header:hover {
+    background-color: rgba(var(--schlatter-blue-rgb), 0.95);
+}
+
+.photo-gallery-header .card-title {
+    color: var(--text-white);
+    font-size: var(--font-xl);
+    font-weight: var(--font-semibold);
+    margin: 0;
+}
+
+.photo-gallery-header p {
+    color: rgba(255, 255, 255, 0.9);
+    margin: var(--spacing-xs) 0 0 0;
+    font-size: var(--font-sm);
+}
+
+/* === FOLDING-SPECIFIC HEADER STYLES === */
+.photo-gallery-header .fold-arrow {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: var(--text-white);
+}
+
+.photo-gallery-header .fold-arrow:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+    transform: scale(1.1);
+}
+
+/* === CONTENT SECTION (UPDATED FOR GENERIC FOLDING) === */
+.photo-gallery-content {
+    position: relative;
+    background-color: var(--bg-white);
+    transition: all var(--transition-slow);
+    overflow: hidden;
+}
+
+/* Updated to use generic .module-content selector */
+.foldable-module.collapsed .module-content {
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* === PHOTOS CONTAINER === */
+.photos-container {
+    padding: var(--spacing-lg);
+    background-color: var(--bg-white);
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .photos-container {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+}
+
+/* === PHOTOS GRID === */
+.photos-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--spacing-lg);
+    padding: var(--spacing-md) 0;
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .photos-grid {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+}
+
+/* === PHOTO THUMBNAIL === */
+.photo-thumbnail {
+    position: relative;
+    background-color: var(--bg-white);
+    border: 2px solid var(--border-light);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    cursor: pointer;
+    transition: all var(--transition-normal);
+    aspect-ratio: 4/3; /* Consistent thumbnail proportions */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.photo-thumbnail:hover {
+    border-color: var(--photo-primary);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+}
+
+.photo-thumbnail:active {
+    transform: translateY(0);
+    box-shadow: var(--shadow-md);
+}
+
+/* === PHOTO IMAGE === */
+.photo-thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transition: all var(--transition-normal);
+}
+
+.photo-thumbnail:hover img {
+    transform: scale(1.05);
+}
+
+/* === PHOTO INFO OVERLAY === */
+.photo-info {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, 
+        rgba(0, 0, 0, 0.8) 0%, 
+        rgba(0, 0, 0, 0.4) 50%, 
+        transparent 100%);
+    color: var(--text-white);
+    padding: var(--spacing-sm);
+    transform: translateY(100%);
+    transition: transform var(--transition-normal);
+}
+
+.photo-thumbnail:hover .photo-info {
+    transform: translateY(0);
+}
+
+.photo-filename {
+    font-size: var(--font-xs);
+    font-weight: var(--font-medium);
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.photo-size {
+    font-size: var(--font-xs);
+    color: rgba(255, 255, 255, 0.8);
+}
+
+/* === PHOTO LOADING STATE === */
+.photo-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-light);
+    color: var(--text-secondary);
+    font-size: var(--font-sm);
+}
+
+/* === STATE SECTIONS === */
+.loading-state,
+.error-state {
+    padding: var(--spacing-xxl);
+    text-align: center;
+    background-color: var(--bg-section);
+    min-height: 600px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .loading-state,
+.foldable-module.collapsed .error-state {
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    opacity: 0;
+}
+
+.loading-content,
+.error-content {
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.loading-content p,
+.error-content p {
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-md);
+    line-height: var(--line-height-relaxed);
+}
+
+.error-content h4 {
+    color: var(--status-error);
+    margin-bottom: var(--spacing-md);
+    font-size: var(--font-lg);
+}
+
+/* ===================================================================== */
+/* LIGHTBOX MODAL STYLES */
+/* ===================================================================== */
+
+/* === LIGHTBOX MODAL === */
+.lightbox-modal {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: var(--z-modal);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: all var(--transition-normal);
+}
+
+.lightbox-modal.active {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* === LIGHTBOX OVERLAY === */
+.lightbox-overlay {
+    position: absolute;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.9);
+    cursor: pointer;
+}
+
+/* === LIGHTBOX CONTAINER === */
+.lightbox-container {
+    position: relative;
+    width: 90vw;
+    height: 90vh;
+    max-width: 1200px;
+    max-height: 900px;
+    background-color: var(--bg-white);
+    border-radius: var(--border-radius-lg);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: var(--shadow-lg);
+    transform: scale(0.8);
+    transition: transform var(--transition-normal);
+}
+
+.lightbox-modal.active .lightbox-container {
+    transform: scale(1);
+}
+
+/* === LIGHTBOX HEADER === */
+.lightbox-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-md) var(--spacing-lg);
+    background-color: var(--photo-primary);
+    color: var(--text-white);
+    border-bottom: 1px solid var(--border-light);
+}
+
+.lightbox-photo-info {
+    flex: 1;
+    min-width: 0; /* Allow text truncation */
+}
+
+.lightbox-title {
+    font-size: var(--font-lg);
+    font-weight: var(--font-semibold);
+    margin: 0 0 4px 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-white);
+}
+
+.lightbox-meta {
+    font-size: var(--font-sm);
+    color: rgba(255, 255, 255, 0.8);
+    margin: 0;
+}
+
+.lightbox-close-btn {
+    width: 40px;
+    height: 40px;
+    border: none;
+    background-color: rgba(255, 255, 255, 0.1);
+    color: var(--text-white);
+    border-radius: var(--border-radius);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color var(--transition-fast);
+    margin-left: var(--spacing-md);
+}
+
+.lightbox-close-btn:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+}
+
+/* === LIGHTBOX CONTENT === */
+.lightbox-content {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    background-color: #000000;
+    overflow: hidden;
+}
+
+/* === LIGHTBOX PHOTO === */
+.lightbox-photo-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--spacing-md);
+    position: relative;
+}
+
+.lightbox-photo {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    border-radius: var(--border-radius-sm);
+    box-shadow: var(--shadow-md);
+}
+
+/* === LIGHTBOX LOADING === */
+.lightbox-loading {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.8);
+    color: var(--text-white);
+}
+
+.lightbox-loading p {
+    margin-top: var(--spacing-md);
+    color: var(--text-white);
+}
+
+/* === LIGHTBOX NAVIGATION === */
+.lightbox-nav-btn {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 60px;
+    height: 60px;
+    border: none;
+    background-color: rgba(255, 255, 255, 0.1);
+    color: var(--text-white);
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+    z-index: 10;
+}
+
+.lightbox-nav-btn:hover {
+    background-color: rgba(255, 255, 255, 0.2);
+    transform: translateY(-50%) scale(1.1);
+}
+
+.lightbox-prev {
+    left: var(--spacing-lg);
+}
+
+.lightbox-next {
+    right: var(--spacing-lg);
+}
+
+.lightbox-nav-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    transform: translateY(-50%) scale(1);
+}
+
+/* === LIGHTBOX FOOTER === */
+.lightbox-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--spacing-md) var(--spacing-lg);
+    background-color: var(--bg-section);
+    border-top: 1px solid var(--border-light);
+}
+
+.lightbox-photo-counter {
+    display: flex;
+    align-items: center;
+}
+
+.photo-counter {
+    font-size: var(--font-sm);
+    color: var(--text-secondary);
+    font-weight: var(--font-medium);
+}
+
+/* === PHOTO/GALLERY COLORS === */
+:root {
+    --photo-primary: #003278;           /* Schlatter blue for photo module */
+    --photo-primary-hover: #002A66;     /* Darker blue for hover states */
+    --photo-secondary: #1976D2;         /* Light blue for accents */
+    --photo-overlay: rgba(0, 50, 120, 0.8);  /* Blue overlay for info */
+    --photo-grid: rgba(0, 50, 120, 0.1);     /* Grid background tint */
+}
+
+/* === COLLAPSED STATE INDICATOR === */
+.foldable-module.collapsed .photo-gallery-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, 
+        rgba(255, 255, 255, 0.3) 0%, 
+        rgba(255, 255, 255, 0.6) 50%, 
+        rgba(255, 255, 255, 0.3) 100%);
+}
+
+/* === PERFORMANCE OPTIMIZATION === */
+.foldable-module.collapsed .photo-thumbnail * {
+    animation: none !important;
+    transition: none !important;
+}
+
+/* === GALLERY-SPECIFIC FEATURES === */
+.photo-gallery-info {
+    font-size: var(--font-xs);
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.photo-gallery-info::before {
+    content: "📷 ";  /* Camera emoji */
+}
+
+/* === KEYBOARD NAVIGATION HINTS === */
+.keyboard-hint {
+    position: absolute;
+    bottom: var(--spacing-md);
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: rgba(0, 0, 0, 0.6);
+    color: var(--text-white);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--border-radius);
+    font-size: var(--font-xs);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity var(--transition-normal);
+}
+
+.lightbox-modal:hover .keyboard-hint {
+    opacity: 1;
+}
+
+/* === PRINT STYLES === */
+@media print {
+    .photo-gallery-container {
+        box-shadow: none;
+        border: 1px solid var(--border-color);
+        page-break-inside: avoid;
+    }
+    
+    .photo-gallery-header {
+        background-color: var(--bg-light) !important;
+        color: var(--text-primary) !important;
+        border-bottom: 2px solid var(--border-color);
+    }
+    
+    .lightbox-modal {
+        display: none !important; /* Hide lightbox in print */
+    }
+    
+    .photos-grid {
+        grid-template-columns: repeat(3, 1fr) !important; /* 3 columns for print */
+        gap: var(--spacing-md) !important;
+    }
+    
+    .photo-thumbnail {
+        aspect-ratio: 4/3 !important;
+        page-break-inside: avoid;
+    }
+    
+    .photo-info {
+        transform: translateY(0) !important; /* Always show photo info in print */
+        background: rgba(0, 0, 0, 0.7) !important;
+    }
+    
+    .fold-arrow {
+        display: none !important;
+    }
+    
+    /* Print: expand all content regardless of fold state */
+    .foldable-module.collapsed .module-content {
+        min-height: 600px !important;
+        max-height: none !important;
+        padding: var(--spacing-lg) !important;
+        overflow: visible !important;
+    }
+    
+    .foldable-module.collapsed .photos-container {
+        height: auto !important;
+        min-height: auto !important;
+        padding: var(--spacing-lg) !important;
+        overflow: visible !important;
+    }
+    
+    .foldable-module.collapsed .photos-grid {
+        height: auto !important;
+        min-height: auto !important;
+        padding: var(--spacing-md) 0 !important;
+        overflow: visible !important;
+    }
+}
