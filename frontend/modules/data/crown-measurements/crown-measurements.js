@@ -456,7 +456,7 @@ class CrownMeasurements {
                 gridcolor: 'rgba(255, 87, 34, 0.1)',
                 tickfont: { color: this.config.colors.warm },
                 titlefont: { color: this.config.colors.warm },
-                range: [-10, 200],
+                range: [-10, 220],
                 zeroline: true,
                 zerolinecolor: 'black'
             },
@@ -642,7 +642,7 @@ class CrownMeasurements {
                 gridcolor: 'rgba(33, 150, 243, 0.1)',
                 tickfont: { color: this.config.colors.cold },
                 titlefont: { color: this.config.colors.cold },
-                range: [-10, 200],
+                range: [-10, 220],
                 zeroline: true,
                 zerolinecolor: 'black'
             },

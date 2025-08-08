@@ -143,13 +143,9 @@ class ExperimentSummaryRepository {
                 -- File Availability
                 file_completeness_percent, critical_files_complete, critical_files_count,
                 total_files, available_count, missing_count, 
-                available_files_json, missing_files_json,
+                available_files_json, missing_files_json
                 
-                updated_at
-                
-                created_at, updated_at
-                
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
         const params = [
             summaryData.experiment_id,
@@ -228,11 +224,7 @@ class ExperimentSummaryRepository {
             summaryData.available_count,
             summaryData.missing_count,
             summaryData.available_files_json,
-            summaryData.missing_files_json,
-            
-            // Timestamps (MISSING FROM ORIGINAL)
-            summaryData.created_at,
-            summaryData.updated_at
+            summaryData.missing_files_json
         ];
 
         await executeAsync(sql, params);
