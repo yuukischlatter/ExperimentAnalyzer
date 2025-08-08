@@ -4,6 +4,7 @@
  * Integrates with crown measurement backend service (Excel + Journal hybrid)
  * Features: Warm/Cold comparison, Top view geometry, Calculated AD values
  * UPDATED: Added complete rail structure to side views matching Python implementation
+ * UPDATED: Higher DPI rendering and removed Excel cell references
  */
 
 class CrownMeasurements {
@@ -34,7 +35,7 @@ class CrownMeasurements {
             apiBaseUrl: '/api',
             autoLoad: true,
             maxPoints: 1000,  // Crown data is typically small
-            plotHeight: 280,
+            plotHeight: 280,  // Increased from 280px for better resolution
             colors: {
                 warm: '#FF5722',        // Orange for warm measurements
                 cold: '#2196F3',        // Blue for cold measurements
@@ -202,24 +203,14 @@ class CrownMeasurements {
      * Update header metadata displays
      */
     updateHeaderMetadata(metadata) {
-        // Update measurement time info
+        // Update measurement time info - only for warm section
         if (this.elements.warmMeasurementTime && metadata.crownInfo.zeitabstandCrownMessung) {
             this.elements.warmMeasurementTime.textContent = 
                 `Measured ${metadata.crownInfo.zeitabstandCrownMessung} minutes after welding`;
         }
         
-        // Update measurement info displays
-        if (this.elements.coldMeasurementInfo) {
-            this.elements.coldMeasurementInfo.textContent = 'Excel cells: J18, N18';
-        }
-        
-        if (this.elements.topViewMeasurementInfo) {
-            this.elements.topViewMeasurementInfo.textContent = 'Excel cells: J23, N23, J24, N24, J31, N31, J32, N32';
-        }
-        
-        if (this.elements.calculatedMeasurementInfo) {
-            this.elements.calculatedMeasurementInfo.textContent = 'Excel AD cells: AD19-AD31';
-        }
+        // Removed Excel cell reference updates as requested
+        // No longer updating coldMeasurementInfo, topViewMeasurementInfo, or calculatedMeasurementInfo
     }
     
     /**
@@ -440,8 +431,7 @@ class CrownMeasurements {
             type: 'scatter',
             mode: 'markers',
             marker: { color: this.config.colors.warm, size: 10 },
-            name: 'Warm Crown Profile',
-            showlegend: true
+            showlegend: false
         });
         
         const layout = {
@@ -627,8 +617,7 @@ class CrownMeasurements {
             type: 'scatter',
             mode: 'markers',
             marker: { color: this.config.colors.cold, size: 10 },
-            name: 'Cold Crown Profile',
-            showlegend: true
+            showlegend: false
         });
         
         const layout = {
@@ -933,9 +922,9 @@ class CrownMeasurements {
             toImageButtonOptions: {
                 format: 'png',
                 filename: `crown_${plotType}_${this.state.experimentId}`,
-                height: 600,
-                width: 1000,
-                scale: 1
+                height: 800,  // Higher resolution export
+                width: 1200,  // Higher resolution export
+                scale: 6      // 2x DPI for crisp rendering
             }
         };
     }

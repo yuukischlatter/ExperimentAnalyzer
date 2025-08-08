@@ -146,13 +146,21 @@
     gap: var(--spacing-md);
 }
 
-.measurement-time,
-.measurement-info {
+/* === SECTION TIMING (NEW LAYOUT FOR WARM SECTION) === */
+.section-timing {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    flex-shrink: 0;
+}
+
+.measurement-time {
     color: var(--text-muted);
     font-style: italic;
     background-color: rgba(var(--schlatter-blue-rgb), 0.05);
     padding: 2px 6px;
     border-radius: var(--border-radius-sm);
+    font-size: var(--font-xs);
 }
 
 /* === SECTION-SPECIFIC HEADER COLORS === */

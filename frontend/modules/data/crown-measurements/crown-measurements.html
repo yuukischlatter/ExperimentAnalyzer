@@ -39,10 +39,14 @@
             <!-- Section 1: Warm Crown Profile (Journal Data) -->
             <div class="crown-section warm-side-section">
                 <div class="section-header warm-header">
-                    <h4 class="section-title">Warm Crown Profile (After Welding)</h4>
-                    <p class="section-description">Crown measurements from journal in warm state</p>
-                    <div class="section-metadata">
-                        <span data-bind="warmMeasurementTime" class="measurement-time text-xs text-muted">Measured after welding</span>
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h4 class="section-title">Warm Crown Profile (After Welding)</h4>
+                            <p class="section-description">Crown measurements from journal in warm state</p>
+                        </div>
+                        <div class="section-timing">
+                            <span data-bind="warmMeasurementTime" class="measurement-time text-xs text-muted">Measured after welding</span>
+                        </div>
                     </div>
                 </div>
                 <div class="section-content">
@@ -55,9 +59,6 @@
                 <div class="section-header cold-header">
                     <h4 class="section-title">Cold Crown Profile</h4>
                     <p class="section-description">Crown measurements from Excel in cold state</p>
-                    <div class="section-metadata">
-                        <span data-bind="coldMeasurementInfo" class="measurement-info text-xs text-muted">Excel cells: J18, N18</span>
-                    </div>
                 </div>
                 <div class="section-content">
                     <div data-bind="coldCrownPlot" id="cold-crown-plot" class="crown-plot cold-plot"></div>
@@ -69,9 +70,6 @@
                 <div class="section-header top-view-header">
                     <h4 class="section-title">Top View - Lateral Deviations</h4>
                     <p class="section-description">Rail geometry from top perspective with 30x scaling for visibility</p>
-                    <div class="section-metadata">
-                        <span data-bind="topViewMeasurementInfo" class="measurement-info text-xs text-muted">Excel cells: J23, N23, J24, N24, J31, N31, J32, N32</span>
-                    </div>
                 </div>
                 <div class="section-content">
                     <div data-bind="topViewPlot" id="top-view-plot" class="crown-plot top-view-plot"></div>
@@ -82,10 +80,7 @@
             <div class="crown-section calculated-section">
                 <div class="section-header calculated-header">
                     <h4 class="section-title">Calculated Geometric Values</h4>
-                    <p class="section-description">Computed geometric values from Excel AD cells</p>
-                    <div class="section-metadata">
-                        <span data-bind="calculatedMeasurementInfo" class="measurement-info text-xs text-muted">Excel AD cells: AD19-AD31</span>
-                    </div>
+                    <p class="section-description">Computed geometric values from Excel calculations</p>
                 </div>
                 <div class="section-content">
                     <div data-bind="calculatedValuesDisplay" id="calculated-values-display" class="calculated-display">
