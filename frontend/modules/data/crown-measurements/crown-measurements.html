@@ -1,0 +1,209 @@
+<!-- Crown Measurements Module Template - 4-Section Layout with Warm/Cold Comparison -->
+<div class="crown-measurements-container">
+    
+    <!-- Module Header (standardized structure for folding) -->
+    <div class="crown-measurements-header card-header">
+        <div class="flex items-center justify-between">
+            <div class="crown-measurements-title">
+                <h3 class="card-title">Crown Measurements</h3>
+                <p class="text-sm text-secondary" data-bind="experimentInfo">Rail crown geometry analysis with warm/cold comparison and lateral deviations</p>
+            </div>
+            <!-- Fold arrow will be inserted here by folding script -->
+        </div>
+    </div>
+    
+    <!-- Module Content -->
+    <div class="crown-measurements-content">
+        
+        <!-- Loading State -->
+        <div data-bind="loadingSpinner" class="loading-state hidden">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <p>Loading crown measurement data...</p>
+                <p class="text-sm text-secondary">Processing Excel geometry data and journal warm measurements</p>
+            </div>
+        </div>
+        
+        <!-- Error State -->
+        <div data-bind="errorMessage" class="error-state hidden">
+            <div class="error-content">
+                <h4>Crown Measurement Data Not Available</h4>
+                <p data-bind="errorText">No crown measurement files found for this experiment.</p>
+                <p class="text-xs text-muted">Expected files: geradheit+versatz.xlsx and schweissjournal.txt</p>
+            </div>
+        </div>
+        
+        <!-- Four Section Layout Container -->
+        <div data-bind="sectionsContainer" class="crown-sections-container hidden">
+            
+            <!-- Section 1: Warm Crown Profile (Journal Data) -->
+            <div class="crown-section warm-side-section">
+                <div class="section-header warm-header">
+                    <h4 class="section-title">Warm Crown Profile (After Welding)</h4>
+                    <p class="section-description">Crown measurements from journal in warm state</p>
+                    <div class="section-metadata">
+                        <span data-bind="warmMeasurementTime" class="measurement-time text-xs text-muted">Measured after welding</span>
+                    </div>
+                </div>
+                <div class="section-content">
+                    <div data-bind="warmCrownPlot" id="warm-crown-plot" class="crown-plot warm-plot"></div>
+                </div>
+            </div>
+            
+            <!-- Section 2: Cold Crown Profile (Excel Data) -->
+            <div class="crown-section cold-side-section">
+                <div class="section-header cold-header">
+                    <h4 class="section-title">Cold Crown Profile</h4>
+                    <p class="section-description">Crown measurements from Excel in cold state</p>
+                    <div class="section-metadata">
+                        <span data-bind="coldMeasurementInfo" class="measurement-info text-xs text-muted">Excel cells: J18, N18</span>
+                    </div>
+                </div>
+                <div class="section-content">
+                    <div data-bind="coldCrownPlot" id="cold-crown-plot" class="crown-plot cold-plot"></div>
+                </div>
+            </div>
+            
+            <!-- Section 3: Top View - Lateral Deviations (Excel Data) -->
+            <div class="crown-section top-view-section">
+                <div class="section-header top-view-header">
+                    <h4 class="section-title">Top View - Lateral Deviations</h4>
+                    <p class="section-description">Rail geometry from top perspective with 30x scaling for visibility</p>
+                    <div class="section-metadata">
+                        <span data-bind="topViewMeasurementInfo" class="measurement-info text-xs text-muted">Excel cells: J23, N23, J24, N24, J31, N31, J32, N32</span>
+                    </div>
+                </div>
+                <div class="section-content">
+                    <div data-bind="topViewPlot" id="top-view-plot" class="crown-plot top-view-plot"></div>
+                </div>
+            </div>
+            
+            <!-- Section 4: Calculated Geometric Values (Excel AD Cells) -->
+            <div class="crown-section calculated-section">
+                <div class="section-header calculated-header">
+                    <h4 class="section-title">Calculated Geometric Values</h4>
+                    <p class="section-description">Computed geometric values from Excel AD cells</p>
+                    <div class="section-metadata">
+                        <span data-bind="calculatedMeasurementInfo" class="measurement-info text-xs text-muted">Excel AD cells: AD19-AD31</span>
+                    </div>
+                </div>
+                <div class="section-content">
+                    <div data-bind="calculatedValuesDisplay" id="calculated-values-display" class="calculated-display">
+                        
+                        <!-- Primary Values -->
+                        <div class="calculated-group primary-values">
+                            <h5 class="group-title">Primary Crown Values</h5>
+                            <div class="values-grid primary-grid">
+                                <div class="value-item">
+                                    <span class="value-label">Höhenversatz:</span>
+                                    <span data-bind="höhenversatzValue" class="value-number">--</span>
+                                    <span class="value-unit">mm</span>
+                                </div>
+                                <div class="value-item">
+                                    <span class="value-label">Crown:</span>
+                                    <span data-bind="crownValue" class="value-number">--</span>
+                                    <span class="value-unit">mm</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Lateral Offset Values -->
+                        <div class="calculated-group lateral-values">
+                            <h5 class="group-title">Lateral Offsets (Seitenversatz)</h5>
+                            <div class="values-grid lateral-grid">
+                                <div class="value-item">
+                                    <span class="value-label">Kopf A:</span>
+                                    <span data-bind="seitenversatzKopfAValue" class="value-number">--</span>
+                                    <span class="value-unit">mm</span>
+                                </div>
+                                <div class="value-item">
+                                    <span class="value-label">Fuss A:</span>
+                                    <span data-bind="seitenversatzFussAValue" class="value-number">--</span>
+                                    <span class="value-unit">mm</span>
+                                </div>
+                                <div class="value-item">
+                                    <span class="value-label">Kopf B:</span>
+                                    <span data-bind="seitenversatzKopfBValue" class="value-number">--</span>
+                                    <span class="value-unit">mm</span>
+                                </div>
+                                <div class="value-item">
+                                    <span class="value-label">Fuss B:</span>
+                                    <span data-bind="seitenversatzFussBValue" class="value-number">--</span>
+                                    <span class="value-unit">mm</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Arrow/Deflection Values -->
+                        <div class="calculated-group arrow-values">
+                            <h5 class="group-title">Deflection Values (Pfeilung)</h5>
+                            <div class="values-grid arrow-grid">
+                                <div class="value-item">
+                                    <span class="value-label">Pfeilung A:</span>
+                                    <span data-bind="pfeilungAValue" class="value-number">--</span>
+                                    <span class="value-unit">mm</span>
+                                </div>
+                                <div class="value-item">
+                                    <span class="value-label">Pfeilung B:</span>
+                                    <span data-bind="pfeilungBValue" class="value-number">--</span>
+                                    <span class="value-unit">mm</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Warm vs Cold Comparison -->
+                        <div class="calculated-group comparison-values">
+                            <h5 class="group-title">Warm vs Cold Comparison</h5>
+                            <div class="comparison-grid">
+                                <div class="comparison-item">
+                                    <div class="comparison-label">Inlet (Einlauf)</div>
+                                    <div class="comparison-data">
+                                        <span class="cold-value">
+                                            <span class="temp-label">Cold:</span>
+                                            <span data-bind="inletColdValue" class="value-number">--</span>
+                                            <span class="value-unit">mm</span>
+                                        </span>
+                                        <span class="warm-value">
+                                            <span class="temp-label">Warm:</span>
+                                            <span data-bind="inletWarmValue" class="value-number">--</span>
+                                            <span class="value-unit">mm</span>
+                                        </span>
+                                        <span class="difference-value">
+                                            <span class="temp-label">Δ:</span>
+                                            <span data-bind="inletDifferenceValue" class="value-number difference">--</span>
+                                            <span class="value-unit">mm</span>
+                                        </span>
+                                    </div>
+                                </div>
+                                <div class="comparison-item">
+                                    <div class="comparison-label">Outlet (Auslauf)</div>
+                                    <div class="comparison-data">
+                                        <span class="cold-value">
+                                            <span class="temp-label">Cold:</span>
+                                            <span data-bind="outletColdValue" class="value-number">--</span>
+                                            <span class="value-unit">mm</span>
+                                        </span>
+                                        <span class="warm-value">
+                                            <span class="temp-label">Warm:</span>
+                                            <span data-bind="outletWarmValue" class="value-number">--</span>
+                                            <span class="value-unit">mm</span>
+                                        </span>
+                                        <span class="difference-value">
+                                            <span class="temp-label">Δ:</span>
+                                            <span data-bind="outletDifferenceValue" class="value-number difference">--</span>
+                                            <span class="value-unit">mm</span>
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                    </div>
+                </div>
+            </div>
+            
+        </div>
+        
+    </div>
+    
+</div>

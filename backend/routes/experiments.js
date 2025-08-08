@@ -14,6 +14,7 @@ const PositionCsvService = require('../services/PositionCsvService');
 const AccelerationCsvService = require('../services/AccelerationCsvService');
 const TensileCsvService = require('../services/TensileCsvService');
 const PhotoService = require('../services/PhotoService');
+const CrownService = require('../services/CrownService');
 const { responseMiddleware } = require('../models/ApiResponse');
 
 // Apply response middleware to all routes in this router
@@ -26,6 +27,7 @@ const positionService = new PositionCsvService();
 const accelerationService = new AccelerationCsvService();
 const tensileService = new TensileCsvService();
 const photoService = new PhotoService();
+const crownService = new CrownService();
 
 // #region EXISTING EXPERIMENT ROUTES
 
@@ -96,6 +98,13 @@ router.get('/status', async (req, res) => {
                 cacheTimeout: photoCacheStatus.cacheTimeoutMs
             }; 
             
+            // Add crown service status
+            const crownCacheStatus = crownService.getCacheStatus();
+            statusResult.status.crownService = {
+                cachedExperiments: crownCacheStatus.totalCachedExperiments,
+                cacheTimeout: crownCacheStatus.cacheTimeoutMs
+            };
+            
             res.success(statusResult.status);
         } else {
             res.error(statusResult.error, 500);
@@ -156,6 +165,7 @@ router.post('/rescan', async (req, res) => {
                 accelerationService.clearAllCache();
                 tensileService.clearAllCache();
                 photoService.clearAllCache();
+                crownService.clearAllCache();
             }
             
             res.success({
@@ -2380,6 +2390,394 @@ router.post('/photos-service/clear-all-cache', async (req, res) => {
     } catch (error) {
         console.error('Error clearing all photo cache:', error);
         res.error(`Failed to clear all photo cache: ${error.message}`, 500);
+    }
+});
+
+// #endregion
+
+// #region CROWN MEASUREMENT DATA ROUTES
+
+/**
+ * GET /api/experiments/:experimentId/crown-metadata
+ * Get crown measurement metadata and comprehensive information
+ */
+router.get('/:experimentId/crown-metadata', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { forceRefresh = false } = req.query;
+        const forceRefreshBool = forceRefresh === 'true' || forceRefresh === true;
+
+        console.log(`Getting crown metadata for experiment: ${experimentId}`);
+
+        // Check if experiment has crown files
+        const hasCrown = await crownService.hasCrownFiles(experimentId);
+        if (!hasCrown) {
+            return res.error(`No crown measurement files found for experiment ${experimentId}`, 404);
+        }
+
+        // Get comprehensive metadata
+        const metadataResult = await crownService.getCrownMetadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        res.success({
+            experimentId: experimentId,
+            hasValidCrownFiles: true,
+            ...metadataResult
+        });
+
+    } catch (error) {
+        console.error(`Error getting crown metadata for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get crown metadata: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/crown-data/:channelId
+ * Get single crown channel data
+ * Supports: crown_warm_side, crown_cold_side, crown_top_view, crown_calculated
+ */
+router.get('/:experimentId/crown-data/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+        const { 
+            maxPoints = 1000 
+        } = req.query;
+
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 10000) {
+            return res.error('Invalid maxPoints parameter (must be 1-10000)', 400);
+        }
+
+        // Validate channel ID
+        const validChannels = ['crown_warm_side', 'crown_cold_side', 'crown_top_view', 'crown_calculated'];
+        if (!validChannels.includes(channelId)) {
+            return res.error(`Invalid channel ID: ${channelId}. Supported channels: ${validChannels.join(', ')}`, 400);
+        }
+
+        // Get channel data
+        const channelResult = await crownService.getChannelData(experimentId, channelId, {
+            maxPoints: maxPointsInt
+        });
+
+        if (!channelResult.success) {
+            return res.error(channelResult.error, channelResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(channelResult);
+
+    } catch (error) {
+        console.error(`Error getting crown channel data for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get crown channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/:experimentId/crown-data/bulk
+ * Get multiple crown channels data efficiently
+ */
+router.post('/:experimentId/crown-data/bulk', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { 
+            channelIds, 
+            maxPoints = 1000 
+        } = req.body;
+
+        // Validate request body
+        if (!Array.isArray(channelIds)) {
+            return res.error('channelIds must be an array', 400);
+        }
+
+        if (channelIds.length === 0) {
+            return res.error('channelIds cannot be empty', 400);
+        }
+
+        if (channelIds.length > 10) {
+            return res.error('Maximum 10 channels per request', 400);
+        }
+
+        // Validate channel IDs
+        const validChannels = ['crown_warm_side', 'crown_cold_side', 'crown_top_view', 'crown_calculated'];
+        const invalidChannels = channelIds.filter(id => !validChannels.includes(id));
+        if (invalidChannels.length > 0) {
+            return res.error(`Invalid channel IDs: ${invalidChannels.join(', ')}. Supported channels: ${validChannels.join(', ')}`, 400);
+        }
+
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 10000) {
+            return res.error('Invalid maxPoints parameter (must be 1-10000)', 400);
+        }
+
+        console.log(`Bulk crown channel request for ${experimentId}: ${channelIds.length} channels`);
+
+        // Get bulk channel data
+        const bulkResult = await crownService.getBulkChannelData(experimentId, channelIds, {
+            maxPoints: maxPointsInt
+        });
+
+        if (!bulkResult.success) {
+            return res.error(bulkResult.error, 500);
+        }
+
+        res.success(bulkResult);
+
+    } catch (error) {
+        console.error(`Error getting bulk crown channel data for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get bulk crown channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/crown-stats/:channelId
+ * Get crown channel statistics
+ */
+router.get('/:experimentId/crown-stats/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+
+        console.log(`Getting crown channel statistics for ${experimentId}/${channelId}`);
+
+        // Validate channel ID
+        const validChannels = ['crown_warm_side', 'crown_cold_side', 'crown_top_view', 'crown_calculated'];
+        if (!validChannels.includes(channelId)) {
+            return res.error(`Invalid channel ID: ${channelId}. Supported channels: ${validChannels.join(', ')}`, 400);
+        }
+
+        // Get channel statistics
+        const statsResult = await crownService.getChannelStatistics(experimentId, channelId);
+
+        if (!statsResult.success) {
+            return res.error(statsResult.error, statsResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(statsResult);
+
+    } catch (error) {
+        console.error(`Error getting crown channel statistics for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get crown channel statistics: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/crown-channels
+ * Get available crown channels information
+ */
+router.get('/:experimentId/crown-channels', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Getting available crown channels for experiment: ${experimentId}`);
+
+        // Get metadata which includes channel information
+        const metadataResult = await crownService.getCrownMetadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        // Extract channel information
+        const channelsInfo = {
+            experimentId: experimentId,
+            available: metadataResult.channels.available,
+            byType: metadataResult.channels.byType,
+            defaults: metadataResult.channels.defaults,
+            ranges: metadataResult.channels.ranges,
+            summary: {
+                warmSideChannels: metadataResult.channels.available.warmSide.length,
+                coldSideChannels: metadataResult.channels.available.coldSide.length,
+                topViewChannels: metadataResult.channels.available.topView.length,
+                calculatedChannels: metadataResult.channels.available.calculated.length,
+                totalChannels: metadataResult.channels.available.warmSide.length + 
+                              metadataResult.channels.available.coldSide.length +
+                              metadataResult.channels.available.topView.length +
+                              metadataResult.channels.available.calculated.length,
+                crownInfo: metadataResult.crownInfo,
+                comparison: metadataResult.comparison
+            }
+        };
+
+        res.success(channelsInfo);
+
+    } catch (error) {
+        console.error(`Error getting crown channels info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get crown channels information: ${error.message}`, 500);
+    }
+});
+
+/**
+ * DELETE /api/experiments/:experimentId/crown-cache
+ * Clear cached crown data for experiment
+ */
+router.delete('/:experimentId/crown-cache', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Clearing crown cache for experiment: ${experimentId}`);
+
+        crownService.clearCache(experimentId);
+
+        res.success({
+            message: `Crown cache cleared for experiment ${experimentId}`,
+            experimentId: experimentId,
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error clearing crown cache for ${req.params.experimentId}:`, error);
+        res.error(`Failed to clear crown cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/crown-service/status
+ * Get crown service status and cache information
+ */
+router.get('/crown-service/status', async (req, res) => {
+    try {
+        const cacheStatus = crownService.getCacheStatus();
+        
+        res.success({
+            serviceName: 'Crown Service',
+            status: 'active',
+            cache: cacheStatus,
+            capabilities: {
+                supportedChannels: {
+                    warmSide: 'crown_warm_side (journal warm measurements)',
+                    coldSide: 'crown_cold_side (Excel cold measurements)',
+                    topView: 'crown_top_view (Excel lateral deviations)',
+                    calculated: 'crown_calculated (Excel AD cell values)'
+                },
+                supportedFormats: [
+                    'Excel: geradheit+versatz.xlsx with specific cell mappings',
+                    'Journal: schweissjournal.txt semicolon-delimited format'
+                ],
+                measurementTypes: [
+                    'Crown geometry analysis (side view)',
+                    'Lateral deviation analysis (top view)', 
+                    'Warm vs cold comparison',
+                    'Calculated geometric values'
+                ],
+                dataProcessing: {
+                    warmColdMapping: 'CrownEinlaufSeiteWarm→N18, CrownAuslaufSeiteWarm→J18',
+                    units: 'millimeters (mm)',
+                    scalingFactor: '30x for visualization',
+                    temperatureStates: ['Cold (Excel)', 'Warm (Journal)']
+                },
+                maxFileSize: 'Excel: 50MB, Journal: 1MB',
+                caching: 'In-memory with 30-minute TTL'
+            },
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error getting crown service status:', error);
+        res.error(`Failed to get crown service status: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/crown-service/clear-all-cache
+ * Clear all cached crown data
+ */
+router.post('/crown-service/clear-all-cache', async (req, res) => {
+    try {
+        console.log('Clearing all crown cache...');
+
+        crownService.clearAllCache();
+
+        res.success({
+            message: 'All crown cache cleared successfully',
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error clearing all crown cache:', error);
+        res.error(`Failed to clear all crown cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/crown-file-info
+ * Get crown file information without parsing (quick check)
+ */
+router.get('/:experimentId/crown-file-info', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Getting crown file info for experiment: ${experimentId}`);
+
+        // Get file paths
+        const filePaths = await crownService.discoverCrownFiles(experimentId);
+
+        if (!filePaths.excelPath && !filePaths.journalPath) {
+            return res.success({
+                experimentId: experimentId,
+                hasFiles: false,
+                message: 'No crown measurement files found',
+                expectedFiles: ['geradheit+versatz.xlsx', 'schweissjournal.txt']
+            });
+        }
+
+        const fileInfo = {
+            experimentId: experimentId,
+            hasFiles: true,
+            files: {}
+        };
+
+        // Get Excel file info
+        if (filePaths.excelPath) {
+            try {
+                const fs = require('fs').promises;
+                const path = require('path');
+                const excelStats = await fs.stat(filePaths.excelPath);
+
+                fileInfo.files.excel = {
+                    filePath: filePaths.excelPath,
+                    fileName: path.basename(filePaths.excelPath),
+                    fileSize: excelStats.size,
+                    fileSizeMB: (excelStats.size / 1024 / 1024).toFixed(1),
+                    lastModified: excelStats.mtime,
+                    created: excelStats.birthtime,
+                    contains: ['Cold measurements (J18, N18)', 'Top view deviations (J23-N32)', 'Calculated values (AD cells)']
+                };
+            } catch (error) {
+                fileInfo.files.excel = { error: `Cannot access Excel file: ${error.message}` };
+            }
+        }
+
+        // Get journal file info
+        if (filePaths.journalPath) {
+            try {
+                const fs = require('fs').promises;
+                const path = require('path');
+                const journalStats = await fs.stat(filePaths.journalPath);
+
+                fileInfo.files.journal = {
+                    filePath: filePaths.journalPath,
+                    fileName: path.basename(filePaths.journalPath),
+                    fileSize: journalStats.size,
+                    fileSizeKB: (journalStats.size / 1024).toFixed(1),
+                    lastModified: journalStats.mtime,
+                    created: journalStats.birthtime,
+                    contains: ['Warm measurements (CrownEinlaufSeiteWarm, CrownAuslaufSeiteWarm)', 'Measurement timing (ZeitabstandCrownMessung)']
+                };
+            } catch (error) {
+                fileInfo.files.journal = { error: `Cannot access journal file: ${error.message}` };
+            }
+        }
+
+        res.success(fileInfo);
+
+    } catch (error) {
+        console.error(`Error getting crown file info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get crown file information: ${error.message}`, 500);
     }
 });
 

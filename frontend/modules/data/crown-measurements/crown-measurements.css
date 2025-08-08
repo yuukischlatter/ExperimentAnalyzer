@@ -1,0 +1,651 @@
+/* ===================================================================== */
+/* CROWN-MEASUREMENTS.CSS - Desktop Only with Folding Support */
+/* ===================================================================== */
+
+/**
+ * Crown Measurements Module - Styling
+ * Desktop-only version with enhanced folding support
+ * Crown geometry analysis specific styling with professional Schlatter blue theme
+ * Four-section vertical layout: warm side, cold side, top view, calculated values
+ * UPDATED: Uses generic .module-content for folding compatibility
+ * NO mobile/responsive code
+ */
+
+/* === MODULE CONTAINER === */
+.crown-measurements-container {
+    background-color: var(--bg-white);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+}
+
+/* === HEADER SECTION === */
+.crown-measurements-header {
+    background-color: var(--schlatter-blue);
+    color: var(--text-white);
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: none;
+    transition: background-color var(--transition-fast);
+}
+
+.crown-measurements-header:hover {
+    background-color: rgba(var(--schlatter-blue-rgb), 0.95);
+}
+
+.crown-measurements-header .card-title {
+    color: var(--text-white);
+    font-size: var(--font-xl);
+    font-weight: var(--font-semibold);
+    margin: 0;
+}
+
+.crown-measurements-header p {
+    color: rgba(255, 255, 255, 0.9);
+    margin: var(--spacing-xs) 0 0 0;
+    font-size: var(--font-sm);
+}
+
+/* === FOLDING-SPECIFIC HEADER STYLES === */
+.crown-measurements-header .fold-arrow {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: var(--text-white);
+}
+
+.crown-measurements-header .fold-arrow:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+    transform: scale(1.1);
+}
+
+/* === CONTENT SECTION (UPDATED FOR GENERIC FOLDING) === */
+.crown-measurements-content {
+    position: relative;
+    min-height: 1400px; /* 4 sections × ~300px + spacing */
+    background-color: var(--bg-white);
+    transition: all var(--transition-slow);
+    overflow: hidden;
+}
+
+/* Updated to use generic .module-content selector */
+.foldable-module.collapsed .module-content {
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* === SECTIONS CONTAINER === */
+.crown-sections-container {
+    padding: var(--spacing-lg);
+    background-color: var(--bg-white);
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .crown-sections-container {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+}
+
+/* === INDIVIDUAL CROWN SECTIONS === */
+.crown-section {
+    margin-bottom: var(--spacing-xl);
+    background-color: var(--bg-white);
+    border: 1px solid var(--border-light);
+    border-radius: var(--border-radius);
+    overflow: hidden;
+    transition: all var(--transition-slow);
+}
+
+.crown-section:last-child {
+    margin-bottom: 0;
+}
+
+.foldable-module.collapsed .crown-section {
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
+}
+
+/* === SECTION HEADERS === */
+.section-header {
+    background-color: var(--bg-section);
+    padding: var(--spacing-md);
+    border-bottom: 1px solid var(--border-light);
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .section-header {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
+}
+
+.section-title {
+    color: var(--schlatter-blue);
+    font-size: var(--font-lg);
+    font-weight: var(--font-semibold);
+    margin: 0 0 var(--spacing-xs) 0;
+}
+
+.section-description {
+    color: var(--text-secondary);
+    font-size: var(--font-sm);
+    margin: 0 0 var(--spacing-xs) 0;
+    line-height: var(--line-height-normal);
+}
+
+.section-metadata {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+}
+
+.measurement-time,
+.measurement-info {
+    color: var(--text-muted);
+    font-style: italic;
+    background-color: rgba(var(--schlatter-blue-rgb), 0.05);
+    padding: 2px 6px;
+    border-radius: var(--border-radius-sm);
+}
+
+/* === SECTION-SPECIFIC HEADER COLORS === */
+.warm-header {
+    border-left: 4px solid #FF5722; /* Orange for warm */
+}
+
+.cold-header {
+    border-left: 4px solid #2196F3; /* Blue for cold */
+}
+
+.top-view-header {
+    border-left: 4px solid #4CAF50; /* Green for top view */
+}
+
+.calculated-header {
+    border-left: 4px solid #9C27B0; /* Purple for calculated */
+}
+
+/* === SECTION CONTENT === */
+.section-content {
+    padding: var(--spacing-md);
+    background-color: var(--bg-white);
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .section-content {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+}
+
+/* === CROWN PLOTS === */
+.crown-plot {
+    width: 100%;
+    height: 280px;
+    border-radius: var(--border-radius-sm);
+    background-color: var(--bg-white);
+    transition: opacity var(--transition-normal);
+}
+
+.foldable-module.collapsed .crown-plot {
+    opacity: 0;
+    pointer-events: none;
+    height: 0 !important;
+    min-height: 0 !important;
+}
+
+/* Plot-specific backgrounds for visual distinction */
+.warm-plot {
+    background: linear-gradient(to bottom right, 
+        rgba(255, 87, 34, 0.02) 0%, 
+        rgba(255, 255, 255, 1) 100%);
+}
+
+.cold-plot {
+    background: linear-gradient(to bottom right, 
+        rgba(33, 150, 243, 0.02) 0%, 
+        rgba(255, 255, 255, 1) 100%);
+}
+
+.top-view-plot {
+    background: linear-gradient(to bottom right, 
+        rgba(76, 175, 80, 0.02) 0%, 
+        rgba(255, 255, 255, 1) 100%);
+}
+
+/* === CALCULATED VALUES DISPLAY === */
+.calculated-display {
+    background-color: var(--bg-section);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-lg);
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .calculated-display {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+}
+
+/* === CALCULATED VALUE GROUPS === */
+.calculated-group {
+    margin-bottom: var(--spacing-lg);
+    background-color: var(--bg-white);
+    border: 1px solid var(--border-light);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+}
+
+.calculated-group:last-child {
+    margin-bottom: 0;
+}
+
+.group-title {
+    color: var(--schlatter-blue);
+    font-size: var(--font-md);
+    font-weight: var(--font-semibold);
+    margin: 0 0 var(--spacing-md) 0;
+    padding-bottom: var(--spacing-xs);
+    border-bottom: 2px solid rgba(var(--schlatter-blue-rgb), 0.1);
+}
+
+/* === VALUE GRIDS === */
+.values-grid {
+    display: grid;
+    gap: var(--spacing-md);
+}
+
+.primary-grid {
+    grid-template-columns: 1fr 1fr;
+}
+
+.lateral-grid {
+    grid-template-columns: repeat(4, 1fr);
+}
+
+.arrow-grid {
+    grid-template-columns: 1fr 1fr;
+}
+
+/* === VALUE ITEMS === */
+.value-item {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm);
+    background-color: var(--bg-section);
+    border-radius: var(--border-radius-sm);
+    border: 1px solid var(--border-light);
+}
+
+.value-label {
+    font-size: var(--font-sm);
+    font-weight: var(--font-medium);
+    color: var(--text-secondary);
+    min-width: 80px;
+}
+
+.value-number {
+    font-size: var(--font-md);
+    font-weight: var(--font-semibold);
+    color: var(--text-primary);
+    font-family: var(--font-family-mono);
+    min-width: 60px;
+    text-align: right;
+}
+
+.value-unit {
+    font-size: var(--font-sm);
+    color: var(--text-muted);
+    font-weight: var(--font-normal);
+}
+
+/* === COMPARISON GRID === */
+.comparison-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--spacing-lg);
+}
+
+.comparison-item {
+    background-color: var(--bg-white);
+    border: 1px solid var(--border-light);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+}
+
+.comparison-label {
+    font-size: var(--font-md);
+    font-weight: var(--font-semibold);
+    color: var(--schlatter-blue);
+    margin-bottom: var(--spacing-md);
+    text-align: center;
+}
+
+.comparison-data {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+}
+
+.cold-value,
+.warm-value,
+.difference-value {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-xs) var(--spacing-sm);
+    border-radius: var(--border-radius-sm);
+}
+
+.cold-value {
+    background-color: rgba(33, 150, 243, 0.1);
+    border-left: 3px solid #2196F3;
+}
+
+.warm-value {
+    background-color: rgba(255, 87, 34, 0.1);
+    border-left: 3px solid #FF5722;
+}
+
+.difference-value {
+    background-color: rgba(156, 39, 176, 0.1);
+    border-left: 3px solid #9C27B0;
+}
+
+.temp-label {
+    font-size: var(--font-xs);
+    font-weight: var(--font-medium);
+    color: var(--text-secondary);
+    min-width: 45px;
+}
+
+.difference {
+    color: var(--schlatter-blue);
+    font-weight: var(--font-bold);
+}
+
+/* === STATE SECTIONS === */
+.loading-state,
+.error-state {
+    padding: var(--spacing-xxl);
+    text-align: center;
+    background-color: var(--bg-section);
+    min-height: 1400px; /* Match content height */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .loading-state,
+.foldable-module.collapsed .error-state {
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    opacity: 0;
+}
+
+.loading-content,
+.error-content {
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.loading-content p,
+.error-content p {
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-md);
+    line-height: var(--line-height-relaxed);
+}
+
+.error-content h4 {
+    color: var(--status-error);
+    margin-bottom: var(--spacing-md);
+    font-size: var(--font-lg);
+}
+
+/* === PLOTLY CUSTOMIZATIONS === */
+.crown-plot .plotly-graph-div {
+    width: 100% !important;
+    height: 100% !important;
+    transition: opacity var(--transition-normal);
+}
+
+.foldable-module.collapsed .crown-plot .plotly-graph-div {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.crown-plot .modebar {
+    right: 10px !important;
+    top: 10px !important;
+    transition: opacity var(--transition-fast);
+}
+
+.foldable-module.collapsed .crown-plot .modebar {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.crown-plot .plotly .modebar-btn path {
+    fill: var(--crown-primary) !important;
+}
+
+.crown-plot .plotly .modebar-btn:hover path {
+    fill: var(--crown-primary-hover) !important;
+}
+
+.crown-plot .bg {
+    fill: var(--bg-white) !important;
+}
+
+.crown-plot .xy {
+    border: 1px solid var(--border-light);
+    border-radius: var(--border-radius-sm);
+}
+
+/* === CROWN-SPECIFIC CUSTOMIZATIONS === */
+.crown-plot .xgrid,
+.crown-plot .ygrid {
+    stroke: rgba(0, 50, 120, 0.1) !important;  /* Schlatter blue grid */
+}
+
+.crown-plot .ytick text,
+.crown-plot .yaxis .axistext {
+    fill: var(--crown-primary) !important;
+}
+
+.crown-plot .xtick text,
+.crown-plot .xaxis .axistext {
+    fill: var(--text-secondary) !important;
+}
+
+.crown-plot .legendtext {
+    fill: var(--text-primary) !important;
+}
+
+.crown-plot .hovertext {
+    background-color: rgba(255, 255, 255, 0.95) !important;
+    border: 1px solid var(--crown-primary) !important;
+    border-radius: var(--border-radius-sm) !important;
+}
+
+/* === CROWN GEOMETRY COLORS === */
+:root {
+    --crown-primary: #003278;           /* Schlatter blue for main traces */
+    --crown-primary-hover: #002A66;     /* Darker blue for hover states */
+    --crown-warm: #FF5722;              /* Orange for warm measurements */
+    --crown-cold: #2196F3;              /* Blue for cold measurements */
+    --crown-topview: #4CAF50;           /* Green for top view */
+    --crown-calculated: #9C27B0;        /* Purple for calculated values */
+    --crown-grid: rgba(0, 50, 120, 0.12);  /* Grid color */
+    --crown-background: rgba(0, 50, 120, 0.02);  /* Very light blue background */
+}
+
+/* === CROWN TRACE STYLING === */
+.crown-plot .trace {
+    stroke: var(--crown-primary);
+    stroke-width: 2px;
+}
+
+.crown-plot .trace:hover {
+    stroke: var(--crown-primary-hover);
+    stroke-width: 2.5px;
+}
+
+/* Warm trace styling */
+.crown-plot .warm-trace {
+    stroke: var(--crown-warm);
+    stroke-width: 2.5px;
+}
+
+/* Cold trace styling */
+.crown-plot .cold-trace {
+    stroke: var(--crown-cold);
+    stroke-width: 2.5px;
+}
+
+/* === COLLAPSED STATE INDICATOR === */
+.foldable-module.collapsed .crown-measurements-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, 
+        rgba(255, 255, 255, 0.3) 0%, 
+        rgba(255, 255, 255, 0.6) 50%, 
+        rgba(255, 255, 255, 0.3) 100%);
+}
+
+/* === PERFORMANCE OPTIMIZATION === */
+.foldable-module.collapsed .crown-plot * {
+    animation: none !important;
+    transition: none !important;
+}
+
+/* High-density data optimization */
+.crown-plot .scatterlayer .trace {
+    shape-rendering: optimizeSpeed;
+}
+
+.crown-plot .scatterlayer .trace .lines path {
+    vector-effect: non-scaling-stroke;
+}
+
+/* === CROWN GEOMETRY INFO STYLING === */
+.crown-info {
+    font-size: var(--font-xs);
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+.crown-info::before {
+    content: "📐 ";  /* Geometry emoji for crown measurements */
+}
+
+/* === PRINT STYLES === */
+@media print {
+    .crown-measurements-container {
+        box-shadow: none;
+        border: 1px solid var(--border-color);
+        page-break-inside: avoid;
+    }
+    
+    .crown-measurements-header {
+        background-color: var(--bg-light) !important;
+        color: var(--text-primary) !important;
+        border-bottom: 2px solid var(--border-color);
+    }
+    
+    .crown-plot .modebar {
+        display: none !important;
+    }
+    
+    /* Print: expand all content regardless of fold state */
+    .foldable-module.collapsed .module-content {
+        min-height: 1400px !important;
+        max-height: none !important;
+        padding: var(--spacing-lg) !important;
+        overflow: visible !important;
+    }
+    
+    .foldable-module.collapsed .crown-sections-container {
+        height: auto !important;
+        min-height: auto !important;
+        padding: var(--spacing-lg) !important;
+        overflow: visible !important;
+    }
+    
+    .foldable-module.collapsed .crown-section {
+        height: auto !important;
+        min-height: auto !important;
+        margin-bottom: var(--spacing-xl) !important;
+        padding: 0 !important;
+        border: 1px solid var(--border-light) !important;
+        overflow: visible !important;
+    }
+    
+    .foldable-module.collapsed .section-content {
+        height: auto !important;
+        min-height: auto !important;
+        padding: var(--spacing-md) !important;
+        overflow: visible !important;
+    }
+    
+    .foldable-module.collapsed .crown-plot {
+        opacity: 1 !important;
+        pointer-events: all !important;
+        height: 280px !important;
+        min-height: 280px !important;
+    }
+    
+    .foldable-module.collapsed .calculated-display {
+        height: auto !important;
+        min-height: auto !important;
+        padding: var(--spacing-lg) !important;
+        overflow: visible !important;
+    }
+    
+    .fold-arrow {
+        display: none !important;
+    }
+    
+    /* Ensure crown data is visible in print */
+    :root {
+        --crown-primary: #000000 !important;
+        --crown-warm: #666666 !important;
+        --crown-cold: #333333 !important;
+    }
+    
+    /* Page breaks for better print layout */
+    .crown-section {
+        page-break-inside: avoid;
+        page-break-after: auto;
+    }
+    
+    .crown-section:nth-child(3) {
+        page-break-before: auto;
+    }
+    
+    /* Calculated values page break */
+    .calculated-section {
+        page-break-before: auto;
+    }
+}

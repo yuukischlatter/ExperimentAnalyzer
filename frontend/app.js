@@ -333,7 +333,7 @@ class ExperimentAnalyzer {
             //'hasThermalRavi': 'thermal-ir',
             //'hasTcp5File': 'tcp5-oscilloscope',
             //'hasWeldJournal': 'weld-journal',
-            //'hasCrownMeasurements': 'crown-measurements',
+            'hasCrownMeasurements': 'crown-measurements',
             'hasAmbientTemperature': 'ambient-temperature',
             'hasBinFile': 'bin-oscilloscope'
         };
