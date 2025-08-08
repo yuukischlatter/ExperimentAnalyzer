@@ -308,8 +308,8 @@ router.get('/:experimentId', async (req, res) => {
     try {
         const { experimentId } = req.params;
 
-        const repository = new ExperimentRepository();
-        const experiment = await repository.getExperimentWithMetadataAsync(experimentId);
+        const experimentRepository  = new ExperimentRepository();
+        const experiment = await experimentRepository.getExperimentWithMetadataAsync(experimentId);
 
         if (!experiment) {
             return res.error('Experiment not found', 404);
@@ -3262,7 +3262,8 @@ router.put('/:experimentId/notes', async (req, res) => {
         console.log(`Saving notes for experiment: ${experimentId}`);
 
         // Validate that experiment exists
-        const experiment = await repository.getExperimentAsync(experimentId);
+        const experimentRepository = new ExperimentRepository();  // ✅ ADD THIS LINE
+        const experiment = await experimentRepository.getExperimentAsync(experimentId);  // ✅ CHANGE 'repository' TO 'experimentRepository'
         if (!experiment) {
             return res.error(`Experiment not found: ${experimentId}`, 404);
         }
