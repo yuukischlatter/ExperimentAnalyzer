@@ -262,7 +262,58 @@
                             <!-- File indicators populated by JavaScript -->
                         </div>
                     </div>
+                </div>
+            </div>
+            
+            <!-- NEW: Experiment Notes Section -->
+            <div class="experiment-notes-section">
+                <div class="notes-header">
+                    <h4 class="notes-title">Experiment Notes</h4>
+                    <div class="notes-actions">
+                        <button data-bind="saveNotesBtn" class="btn btn-primary btn-sm" disabled>
+                            <span></span> Save
+                        </button>
+                        <button data-bind="clearNotesBtn" class="btn btn-secondary btn-sm">
+                            <span></span> Clear
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="notes-content">
+                    <!-- Notes Loading State -->
+                    <div data-bind="notesLoading" class="notes-loading hidden">
+                        <div class="loading-spinner-small"></div>
+                        <span>Loading notes...</span>
+                    </div>
                     
+                    <!-- Notes Textarea -->
+                    <div class="notes-input-container">
+                        <textarea 
+                            data-bind="notesTextarea" 
+                            class="notes-textarea"
+                            placeholder="Add your notes about this experiment...&#10;&#10;Examples:&#10;• Welding quality observations&#10;• Issues encountered&#10;• Follow-up actions needed&#10;• Comparisons with other experiments"
+                            rows="6"
+                            maxlength="5000"></textarea>
+                        
+                        <div class="notes-footer">
+                            <div class="notes-meta">
+                                <span data-bind="notesWordCount" class="notes-count">0 words</span>
+                                <span class="notes-separator">•</span>
+                                <span data-bind="notesCharCount" class="notes-count">0 / 5000 characters</span>
+                                <span data-bind="notesLastSaved" class="notes-last-saved"></span>
+                            </div>
+                            <div class="notes-status">
+                                <span data-bind="notesStatus" class="notes-status-text"></span>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Notes Error State -->
+                    <div data-bind="notesError" class="notes-error hidden">
+                        <span class="error-icon"></span>
+                        <span data-bind="notesErrorText">Failed to save notes</span>
+                        <button data-bind="retryNotesBtn" class="btn btn-link btn-sm">Retry</button>
+                    </div>
                 </div>
             </div>
             

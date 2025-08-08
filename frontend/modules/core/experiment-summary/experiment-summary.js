@@ -2,6 +2,7 @@
  * Experiment Summary Module
  * Executive overview of key metrics and experiment results
  * Integrates with backend SummaryService for comprehensive analysis
+ * NOW INCLUDES: Notes functionality for user annotations
  */
 
 class ExperimentSummary {
@@ -16,6 +17,10 @@ class ExperimentSummary {
             lastUpdated: null
         };
         this.elements = {};
+        
+        // Notes-specific state
+        this.lastSavedNotesText = '';
+        this.notesAutoSaveTimeout = null;
         
         console.log('ExperimentSummary initialized');
         this.init();
@@ -94,7 +99,11 @@ class ExperimentSummary {
         
         const requiredElements = [
             'loadingSpinner', 'errorMessage', 'summaryContainer',
-            'experimentInfo', 'refreshBtn', 'retryBtn'
+            'experimentInfo', 'refreshBtn', 'retryBtn',
+            // Notes elements
+            'notesTextarea', 'saveNotesBtn', 'clearNotesBtn', 'notesLoading',
+            'notesWordCount', 'notesCharCount', 'notesLastSaved', 'notesStatus',
+            'notesError', 'notesErrorText', 'retryNotesBtn'
         ];
         
         for (const elementName of requiredElements) {
@@ -112,6 +121,24 @@ class ExperimentSummary {
         if (this.elements.retryBtn) {
             this.elements.retryBtn.addEventListener('click', this.handleRetry.bind(this));
         }
+        
+        // NEW: Notes event handlers
+        if (this.elements.notesTextarea) {
+            this.elements.notesTextarea.addEventListener('input', this.handleNotesInput.bind(this));
+            this.elements.notesTextarea.addEventListener('blur', this.handleNotesBlur.bind(this));
+        }
+        
+        if (this.elements.saveNotesBtn) {
+            this.elements.saveNotesBtn.addEventListener('click', this.handleSaveNotes.bind(this));
+        }
+        
+        if (this.elements.clearNotesBtn) {
+            this.elements.clearNotesBtn.addEventListener('click', this.handleClearNotes.bind(this));
+        }
+        
+        if (this.elements.retryNotesBtn) {
+            this.elements.retryNotesBtn.addEventListener('click', this.handleRetryNotes.bind(this));
+        }
     }
     
     async loadExperiment(experimentId) {
@@ -125,7 +152,12 @@ class ExperimentSummary {
                 this.elements.experimentInfo.textContent = 'Experiment: ' + experimentId + ' - Computing comprehensive summary';
             }
             
-            await this.loadSummaryData();
+            // Load summary data and notes in parallel
+            await Promise.all([
+                this.loadSummaryData(),
+                this.loadExperimentNotes()
+            ]);
+            
             this.populateSummaryDisplay();
             
             this.state.isLoaded = true;
@@ -178,6 +210,306 @@ class ExperimentSummary {
             throw new Error('Summary data loading failed: ' + error.message);
         }
     }
+    
+    // === NEW NOTES FUNCTIONALITY ===
+    
+    /**
+     * Load experiment notes
+     */
+    async loadExperimentNotes() {
+        try {
+            if (this.elements.notesLoading) {
+                this.elements.notesLoading.classList.remove('hidden');
+            }
+            
+            const response = await fetch(
+                this.config.apiBaseUrl + '/experiments/' + this.state.experimentId + '/notes',
+                {
+                    method: 'GET',
+                    headers: { 'Accept': 'application/json' }
+                }
+            );
+            
+            if (response.ok) {
+                const result = await response.json();
+                if (result.success) {
+                    const notes = result.data.notes || '';
+                    
+                    if (this.elements.notesTextarea) {
+                        this.elements.notesTextarea.value = notes;
+                    }
+                    
+                    this.lastSavedNotesText = notes;
+                    this.updateNotesMetadata(result.data);
+                    this.updateNotesCharCount();
+                    this.updateSaveButtonState();
+                    
+                    console.log('Notes loaded successfully');
+                }
+            } else if (response.status === 404) {
+                // No notes exist yet - that's OK
+                console.log('No notes found for experiment - starting with empty notes');
+                this.lastSavedNotesText = '';
+                this.updateNotesCharCount();
+                this.updateSaveButtonState();
+            } else {
+                throw new Error('Failed to load notes: ' + response.status);
+            }
+            
+        } catch (error) {
+            console.error('Notes loading failed:', error);
+            this.showNotesError('Failed to load notes: ' + error.message);
+        } finally {
+            if (this.elements.notesLoading) {
+                this.elements.notesLoading.classList.add('hidden');
+            }
+        }
+    }
+    
+    /**
+     * Handle notes input changes
+     */
+    handleNotesInput() {
+        this.updateNotesCharCount();
+        this.updateSaveButtonState();
+        this.hideNotesError();
+        
+        // Auto-save after user stops typing (debounced)
+        clearTimeout(this.notesAutoSaveTimeout);
+        this.notesAutoSaveTimeout = setTimeout(() => {
+            this.autoSaveNotes();
+        }, 2000); // Save after 2 seconds of no typing
+    }
+    
+    /**
+     * Handle notes blur (when user clicks away)
+     */
+    handleNotesBlur() {
+        // Save immediately when user clicks away
+        clearTimeout(this.notesAutoSaveTimeout);
+        this.autoSaveNotes();
+    }
+    
+    /**
+     * Update character and word count
+     */
+    updateNotesCharCount() {
+        if (!this.elements.notesTextarea) return;
+        
+        const text = this.elements.notesTextarea.value;
+        const charCount = text.length;
+        const wordCount = text.trim() === '' ? 0 : text.trim().split(/\s+/).length;
+        
+        if (this.elements.notesCharCount) {
+            this.elements.notesCharCount.textContent = charCount + ' / 5000 characters';
+            
+            // Color coding for character limit
+            if (charCount > 4500) {
+                this.elements.notesCharCount.style.color = 'var(--status-error)';
+            } else if (charCount > 4000) {
+                this.elements.notesCharCount.style.color = 'var(--status-warning)';
+            } else {
+                this.elements.notesCharCount.style.color = '';
+            }
+        }
+        
+        if (this.elements.notesWordCount) {
+            this.elements.notesWordCount.textContent = wordCount + ' words';
+        }
+    }
+    
+    /**
+     * Update save button state based on text changes
+     */
+    updateSaveButtonState() {
+        if (!this.elements.saveNotesBtn || !this.elements.notesTextarea) return;
+        
+        const hasChanges = this.elements.notesTextarea.value !== this.lastSavedNotesText;
+        
+        if (hasChanges) {
+            this.elements.saveNotesBtn.disabled = false;
+            this.elements.saveNotesBtn.classList.add('btn-primary');
+            this.elements.saveNotesBtn.classList.remove('btn-secondary');
+            
+            if (this.elements.notesStatus) {
+                this.elements.notesStatus.textContent = 'Unsaved changes';
+                this.elements.notesStatus.style.color = 'var(--status-warning)';
+            }
+        } else {
+            this.elements.saveNotesBtn.disabled = true;
+            this.elements.saveNotesBtn.classList.remove('btn-primary');
+            this.elements.saveNotesBtn.classList.add('btn-secondary');
+            
+            if (this.elements.notesStatus) {
+                this.elements.notesStatus.textContent = 'Saved';
+                this.elements.notesStatus.style.color = 'var(--status-success)';
+            }
+        }
+    }
+    
+    /**
+     * Auto-save notes (background save)
+     */
+    async autoSaveNotes() {
+        if (!this.elements.notesTextarea) return;
+        
+        const text = this.elements.notesTextarea.value;
+        
+        // Don't save if no changes
+        if (text === this.lastSavedNotesText) {
+            return;
+        }
+        
+        try {
+            if (this.elements.notesStatus) {
+                this.elements.notesStatus.textContent = 'Saving...';
+                this.elements.notesStatus.style.color = '';
+            }
+            
+            await this.saveNotesToServer(text);
+            
+        } catch (error) {
+            console.warn('Auto-save failed:', error);
+            // Don't show error for auto-save failures, just update status
+            if (this.elements.notesStatus) {
+                this.elements.notesStatus.textContent = 'Auto-save failed';
+                this.elements.notesStatus.style.color = 'var(--status-error)';
+            }
+        }
+    }
+    
+    /**
+     * Handle manual save button click
+     */
+    async handleSaveNotes() {
+        if (!this.elements.notesTextarea) return;
+        
+        const text = this.elements.notesTextarea.value;
+        
+        try {
+            if (this.elements.saveNotesBtn) {
+                this.elements.saveNotesBtn.disabled = true;
+                this.elements.saveNotesBtn.innerHTML = '<span>💾</span> Saving...';
+            }
+            
+            await this.saveNotesToServer(text);
+            
+            if (this.elements.saveNotesBtn) {
+                this.elements.saveNotesBtn.innerHTML = '<span>💾</span> Saved!';
+                setTimeout(() => {
+                    if (this.elements.saveNotesBtn) {
+                        this.elements.saveNotesBtn.innerHTML = '<span>💾</span> Save';
+                    }
+                }, 1500);
+            }
+            
+        } catch (error) {
+            console.error('Manual save failed:', error);
+            this.showNotesError('Failed to save notes: ' + error.message);
+            
+            if (this.elements.saveNotesBtn) {
+                this.elements.saveNotesBtn.disabled = false;
+                this.elements.saveNotesBtn.innerHTML = '<span>💾</span> Save';
+            }
+        }
+    }
+    
+    /**
+     * Save notes to server
+     */
+    async saveNotesToServer(text) {
+        const response = await fetch(
+            this.config.apiBaseUrl + '/experiments/' + this.state.experimentId + '/notes',
+            {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                body: JSON.stringify({ notes: text })
+            }
+        );
+        
+        if (!response.ok) {
+            throw new Error('Server returned status ' + response.status);
+        }
+        
+        const result = await response.json();
+        if (!result.success) {
+            throw new Error(result.error || 'Failed to save notes');
+        }
+        
+        // Update internal state
+        this.lastSavedNotesText = text;
+        this.updateNotesMetadata(result.data.notes);
+        this.updateSaveButtonState();
+        this.hideNotesError();
+        
+        console.log('Notes saved successfully');
+    }
+    
+    /**
+     * Handle clear notes button
+     */
+    async handleClearNotes() {
+        if (!confirm('Are you sure you want to clear all notes for this experiment?')) {
+            return;
+        }
+        
+        try {
+            if (this.elements.notesTextarea) {
+                this.elements.notesTextarea.value = '';
+            }
+            
+            await this.saveNotesToServer('');
+            this.updateNotesCharCount();
+            
+        } catch (error) {
+            console.error('Clear notes failed:', error);
+            this.showNotesError('Failed to clear notes: ' + error.message);
+        }
+    }
+    
+    /**
+     * Handle retry notes action
+     */
+    async handleRetryNotes() {
+        this.hideNotesError();
+        await this.loadExperimentNotes();
+    }
+    
+    /**
+     * Update notes metadata display
+     */
+    updateNotesMetadata(notesData) {
+        if (this.elements.notesLastSaved && notesData && notesData.updatedAt) {
+            const date = new Date(notesData.updatedAt);
+            this.elements.notesLastSaved.textContent = 'Last saved: ' + date.toLocaleString();
+        }
+    }
+    
+    /**
+     * Show notes error
+     */
+    showNotesError(message) {
+        if (this.elements.notesError) {
+            this.elements.notesError.classList.remove('hidden');
+        }
+        if (this.elements.notesErrorText) {
+            this.elements.notesErrorText.textContent = message;
+        }
+    }
+    
+    /**
+     * Hide notes error
+     */
+    hideNotesError() {
+        if (this.elements.notesError) {
+            this.elements.notesError.classList.add('hidden');
+        }
+    }
+    
+    // === END NOTES FUNCTIONALITY ===
     
     populateSummaryDisplay() {
         if (!this.state.summaryData) {
@@ -286,7 +618,7 @@ class ExperimentSummary {
             this.updateElement('crownOutletCold', crown.cold && crown.cold.outlet ? crown.cold.outlet.display : '--');
         }
         
-        const hasCrownData = summary.dataSourcesUsed.includes('geometry');
+        const hasCrownData = summary.dataSourcesUsed.includes('geometry') || summary.dataSourcesUsed.includes('crown');
         this.updateElement('crownDataSource', hasCrownData ? 'Journal + Excel' : 'No Data');
     }
     
@@ -510,6 +842,11 @@ class ExperimentSummary {
     destroy() {
         if (this.config.refreshInterval) {
             clearInterval(this.config.refreshInterval);
+        }
+        
+        // Clean up notes auto-save timeout
+        if (this.notesAutoSaveTimeout) {
+            clearTimeout(this.notesAutoSaveTimeout);
         }
         
         const container = document.getElementById(this.containerId);

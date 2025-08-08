@@ -2,6 +2,7 @@
  * Summary Service
  * Computes experiment summary data by aggregating information from all data sources
  * File: backend/services/SummaryService.js
+ * FIXED: Now properly integrates Crown Service for cold measurements
  */
 
 const ExperimentSummary = require('../models/ExperimentSummary');
@@ -241,12 +242,12 @@ class SummaryService {
     }
 
     /**
-     * Compute geometry and position data
+     * FIXED: Compute geometry and position data - NOW INCLUDES CROWN SERVICE INTEGRATION
      */
     async computeGeometryAndPosition(experimentId, experiment, metadata, summary) {
         try {
             const geometryData = {
-                // Crown measurements from journal metadata
+                // Crown measurements from journal metadata (warm values only)
                 crownEinlaufWarm: metadata?.crownEinlaufWarm,
                 crownAuslaufWarm: metadata?.crownAuslaufWarm,
                 crownEinlaufKalt: metadata?.crownEinlaufKalt,
@@ -258,7 +259,39 @@ class SummaryService {
                 auslaufseite: metadata?.auslaufseite
             };
 
-            // Calculate crown differences if both warm and cold are available
+            // FIXED: Try to get Crown Service data for complete warm/cold comparison
+            if (experiment.hasCrownMeasurements) {
+                try {
+                    console.log(`Getting crown metadata for comprehensive warm/cold analysis: ${experimentId}`);
+                    const crownMetadata = await this.crownService.getCrownMetadata(experimentId);
+                    
+                    if (crownMetadata.success && crownMetadata.comparison) {
+                        const comparison = crownMetadata.comparison;
+                        
+                        // Use Crown Service data which has both warm and cold values
+                        geometryData.crownEinlaufWarm = comparison.inlet.warm;
+                        geometryData.crownAuslaufWarm = comparison.outlet.warm;
+                        geometryData.crownEinlaufKalt = comparison.inlet.cold;  // FIXED: From Excel
+                        geometryData.crownAuslaufKalt = comparison.outlet.cold; // FIXED: From Excel
+                        
+                        // Calculate differences using Crown Service data
+                        geometryData.crownDifferenceInlet = comparison.inlet.difference;
+                        geometryData.crownDifferenceOutlet = comparison.outlet.difference;
+                        
+                        console.log(`Crown Service data integrated:`, {
+                            inlet: { warm: comparison.inlet.warm, cold: comparison.inlet.cold },
+                            outlet: { warm: comparison.outlet.warm, cold: comparison.outlet.cold }
+                        });
+                        
+                        summary.addDataSource('crown');
+                    }
+                } catch (error) {
+                    console.warn(`Crown Service integration failed for ${experimentId}:`, error.message);
+                    summary.addError(`Crown measurement integration error: ${error.message}`);
+                }
+            }
+
+            // Calculate crown differences if both warm and cold are available (fallback logic)
             if (geometryData.crownEinlaufWarm != null && geometryData.crownEinlaufKalt != null) {
                 geometryData.crownDifferenceInlet = geometryData.crownEinlaufWarm - geometryData.crownEinlaufKalt;
             }
