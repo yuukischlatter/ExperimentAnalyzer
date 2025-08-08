@@ -15,3 +15,6 @@ CREATE INDEX IF NOT EXISTS idx_experiments_date_files ON experiments(
     has_acceleration_csv,
     has_weld_journal
 );
+
+-- Experiment notes indexes
+CREATE INDEX IF NOT EXISTS idx_experiment_notes_updated ON experiment_notes(updated_at DESC);

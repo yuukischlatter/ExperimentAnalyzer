@@ -2,6 +2,7 @@
  * Experiment Repository
  * Converts C# Database/Repositories/ExperimentRepository.cs to JavaScript
  * Uses same SQL queries with promisified SQLite3 instead of Dapper
+ * EXTENDED: Added summary and notes integration methods
  */
 
 const { queryAsync, querySingleAsync, executeAsync } = require('../database/connection');
@@ -165,6 +166,193 @@ class ExperimentRepository {
             experiment,
             metadata
         };
+    }
+
+    // === NEW SUMMARY INTEGRATION METHODS ===
+
+    /**
+     * Get experiment with metadata and notes
+     * @param {string} experimentId 
+     * @returns {Promise<Object|null>} - {experiment, metadata, notes}
+     */
+    async getExperimentWithNotesAsync(experimentId) {
+        const sql = `
+            SELECT 
+                e.id,
+                e.folder_path,
+                e.experiment_date,
+                e.created_at,
+                e.updated_at,
+                e.has_bin_file,
+                e.has_acceleration_csv,
+                e.has_position_csv,
+                e.has_tensile_csv,
+                e.has_photos,
+                e.has_thermal_ravi,
+                e.has_tcp5_file,
+                e.has_weld_journal,
+                e.has_crown_measurements,
+                e.has_ambient_temperature,
+                m.experiment_id as metadata_experiment_id,
+                m.program_number,
+                m.program_name,
+                m.material,
+                m.shape,
+                m.operator,
+                m.oil_temperature,
+                m.crown_measurement_interval,
+                m.crown_einlauf_warm,
+                m.crown_auslauf_warm,
+                m.crown_einlauf_kalt,
+                m.crown_auslauf_kalt,
+                m.grinding_type,
+                m.grinder,
+                m.comments,
+                m.einlaufseite,
+                m.auslaufseite,
+                m.parsed_at,
+                n.experiment_id as notes_experiment_id,
+                n.notes,
+                n.created_at as notes_created_at,
+                n.updated_at as notes_updated_at
+            FROM experiments e
+            LEFT JOIN experiment_metadata m ON e.id = m.experiment_id
+            LEFT JOIN experiment_notes n ON e.id = n.experiment_id
+            WHERE e.id = ?`;
+
+        const row = await querySingleAsync(sql, [experimentId]);
+        if (!row) return null;
+
+        // Split experiment data
+        const experimentData = {
+            id: row.id,
+            folder_path: row.folder_path,
+            experiment_date: row.experiment_date,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+            has_bin_file: row.has_bin_file,
+            has_acceleration_csv: row.has_acceleration_csv,
+            has_position_csv: row.has_position_csv,
+            has_tensile_csv: row.has_tensile_csv,
+            has_photos: row.has_photos,
+            has_thermal_ravi: row.has_thermal_ravi,
+            has_tcp5_file: row.has_tcp5_file,
+            has_weld_journal: row.has_weld_journal,
+            has_crown_measurements: row.has_crown_measurements,
+            has_ambient_temperature: row.has_ambient_temperature
+        };
+
+        const experiment = Experiment.fromDatabaseRow(experimentData);
+
+        // Create metadata if it exists
+        let metadata = null;
+        if (row.metadata_experiment_id) {
+            const metadataData = {
+                experiment_id: row.metadata_experiment_id,
+                program_number: row.program_number,
+                program_name: row.program_name,
+                material: row.material,
+                shape: row.shape,
+                operator: row.operator,
+                oil_temperature: row.oil_temperature,
+                crown_measurement_interval: row.crown_measurement_interval,
+                crown_einlauf_warm: row.crown_einlauf_warm,
+                crown_auslauf_warm: row.crown_auslauf_warm,
+                crown_einlauf_kalt: row.crown_einlauf_kalt,
+                crown_auslauf_kalt: row.crown_auslauf_kalt,
+                grinding_type: row.grinding_type,
+                grinder: row.grinder,
+                comments: row.comments,
+                einlaufseite: row.einlaufseite,
+                auslaufseite: row.auslaufseite,
+                parsed_at: row.parsed_at
+            };
+            metadata = ExperimentMetadata.fromDatabaseRow(metadataData);
+        }
+
+        // Create notes if they exist
+        let notes = null;
+        if (row.notes_experiment_id) {
+            const ExperimentNotes = require('../models/ExperimentNotes');
+            const notesData = {
+                experiment_id: row.notes_experiment_id,
+                notes: row.notes,
+                created_at: row.notes_created_at,
+                updated_at: row.notes_updated_at
+            };
+            notes = ExperimentNotes.fromDatabaseRow(notesData);
+        }
+
+        return {
+            experiment,
+            metadata,
+            notes
+        };
+    }
+
+    /**
+     * Get complete experiment data for summary computation
+     * @param {string} experimentId 
+     * @returns {Promise<Object|null>} - {experiment, metadata, notes, hasAllData: boolean}
+     */
+    async getExperimentFullSummaryAsync(experimentId) {
+        try {
+            const result = await this.getExperimentWithNotesAsync(experimentId);
+            if (!result) return null;
+
+            const { experiment, metadata, notes } = result;
+
+            // Check data completeness for summary computation
+            const hasAllData = {
+                hasExperiment: !!experiment,
+                hasMetadata: !!metadata,
+                hasNotes: !!notes && !notes.isEmpty(),
+                hasBinaryData: experiment?.hasBinFile || false,
+                hasTensileData: experiment?.hasTensileCsv || false,
+                hasTemperatureData: experiment?.hasAmbientTemperature || false,
+                hasAccelerationData: experiment?.hasAccelerationCsv || false,
+                hasPositionData: experiment?.hasPositionCsv || false,
+                hasCrownData: experiment?.hasCrownMeasurements || false
+            };
+
+            return {
+                experiment,
+                metadata,
+                notes,
+                hasAllData,
+                completeness: {
+                    total: Object.keys(hasAllData).length,
+                    available: Object.values(hasAllData).filter(Boolean).length,
+                    percentage: Math.round(
+                        (Object.values(hasAllData).filter(Boolean).length / Object.keys(hasAllData).length) * 100
+                    )
+                }
+            };
+
+        } catch (error) {
+            console.error(`Error getting full summary data for ${experimentId}:`, error);
+            return null;
+        }
+    }
+
+    /**
+     * Get experiments that are suitable for summary computation (have journal + metadata)
+     * @returns {Promise<Experiment[]>}
+     */
+    async getExperimentsForSummaryAsync() {
+        const sql = `
+            SELECT 
+                e.id, e.folder_path, e.experiment_date, e.created_at, e.updated_at,
+                e.has_bin_file, e.has_acceleration_csv, e.has_position_csv, e.has_tensile_csv,
+                e.has_photos, e.has_thermal_ravi, e.has_tcp5_file, e.has_weld_journal,
+                e.has_crown_measurements, e.has_ambient_temperature
+            FROM experiments e
+            INNER JOIN experiment_metadata m ON e.id = m.experiment_id
+            WHERE e.has_weld_journal = 1
+            ORDER BY e.experiment_date DESC, e.id`;
+        
+        const rows = await queryAsync(sql);
+        return rows.map(row => Experiment.fromDatabaseRow(row));
     }
 
     /**

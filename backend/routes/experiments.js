@@ -16,6 +16,9 @@ const TensileCsvService = require('../services/TensileCsvService');
 const PhotoService = require('../services/PhotoService');
 const CrownService = require('../services/CrownService');
 const TPC5ParserService = require('../services/TPC5ParserService');
+const SummaryService = require('../services/SummaryService');
+const ExperimentNotesRepository = require('../repositories/ExperimentNotesRepository');
+const ExperimentNotes = require('../models/ExperimentNotes');
 const { responseMiddleware } = require('../models/ApiResponse');
 
 // Apply response middleware to all routes in this router
@@ -30,6 +33,8 @@ const tensileService = new TensileCsvService();
 const photoService = new PhotoService();
 const crownService = new CrownService();
 const tpc5Service = new TPC5ParserService();
+const summaryService = new SummaryService();
+const notesRepository = new ExperimentNotesRepository();
 
 // #region EXISTING EXPERIMENT ROUTES
 
@@ -114,6 +119,16 @@ router.get('/status', async (req, res) => {
                 cacheTimeout: tpc5CacheStatus.cacheTimeoutMs
             };
 
+            // Add summary service status
+            const summaryCacheStatus = summaryService.getCacheStatus();
+            statusResult.status.summaryService = {
+                cachedExperiments: summaryCacheStatus.totalCachedSummaries,
+                validEntries: summaryCacheStatus.validEntries,
+                expiredEntries: summaryCacheStatus.expiredEntries,
+                cacheTimeout: summaryCacheStatus.cacheTimeoutMs,
+                hitRate: summaryCacheStatus.hitRate
+            };
+
             res.success(statusResult.status);
         } else {
             res.error(statusResult.error, 500);
@@ -176,6 +191,7 @@ router.post('/rescan', async (req, res) => {
                 photoService.clearAllCache();
                 crownService.clearAllCache();
                 tpc5Service.clearAllCache();
+                summaryService.clearAllCache();
             }
             
             res.success({
@@ -3135,6 +3151,341 @@ router.get('/:experimentId/tpc5-file-info', async (req, res) => {
     } catch (error) {
         console.error(`Error getting TPC5 file info for ${req.params.experimentId}:`, error);
         res.error(`Failed to get TPC5 file information: ${error.message}`, 500);
+    }
+});
+
+// #endregion
+
+// #region EXPERIMENT SUMMARY AND NOTES ROUTES
+
+/**
+ * GET /api/experiments/:experimentId/summary
+ * Get computed experiment summary with key metrics
+ */
+router.get('/:experimentId/summary', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { refresh = false } = req.query;
+        const forceRefresh = refresh === 'true' || refresh === true;
+
+        console.log(`Getting summary for experiment: ${experimentId} (refresh: ${forceRefresh})`);
+
+        // Clear cache if refresh requested
+        if (forceRefresh) {
+            summaryService.clearSummaryCache(experimentId);
+        }
+
+        // Compute summary
+        const summary = await summaryService.computeExperimentSummary(experimentId);
+        
+        if (!summary) {
+            return res.error(`Failed to compute summary for experiment ${experimentId}`, 500);
+        }
+
+        res.success(summary.toDisplayFormat());
+
+    } catch (error) {
+        console.error(`Error getting summary for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get experiment summary: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/summary/refresh
+ * Force refresh experiment summary (clear cache and recompute)
+ */
+router.get('/:experimentId/summary/refresh', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Force refreshing summary for experiment: ${experimentId}`);
+
+        // Clear cache and recompute
+        summaryService.clearSummaryCache(experimentId);
+        const summary = await summaryService.computeExperimentSummary(experimentId);
+
+        res.success({
+            message: `Summary refreshed for experiment ${experimentId}`,
+            summary: summary.toDisplayFormat(),
+            refreshedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error refreshing summary for ${req.params.experimentId}:`, error);
+        res.error(`Failed to refresh experiment summary: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/notes
+ * Get user notes for experiment
+ */
+router.get('/:experimentId/notes', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Getting notes for experiment: ${experimentId}`);
+
+        const notes = await notesRepository.getNotesAsync(experimentId);
+        
+        if (!notes) {
+            // Return empty notes if none exist
+            const emptyNotes = {
+                experimentId: experimentId,
+                notes: '',
+                createdAt: null,
+                updatedAt: null,
+                isEmpty: true,
+                wordCount: 0,
+                characterCount: 0
+            };
+            return res.success(emptyNotes);
+        }
+
+        res.success(notes.toApiFormat());
+
+    } catch (error) {
+        console.error(`Error getting notes for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get experiment notes: ${error.message}`, 500);
+    }
+});
+
+/**
+ * PUT /api/experiments/:experimentId/notes
+ * Save or update user notes for experiment
+ */
+router.put('/:experimentId/notes', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { notes } = req.body;
+
+        console.log(`Saving notes for experiment: ${experimentId}`);
+
+        // Validate that experiment exists
+        const experiment = await repository.getExperimentAsync(experimentId);
+        if (!experiment) {
+            return res.error(`Experiment not found: ${experimentId}`, 404);
+        }
+
+        // Create or update notes
+        const experimentNotes = ExperimentNotes.createNew(experimentId, notes || '');
+        
+        // Validate notes
+        const validation = experimentNotes.validate();
+        if (!validation.isValid) {
+            return res.error(`Notes validation failed: ${validation.errors.join(', ')}`, 400);
+        }
+
+        // Save to database
+        await notesRepository.upsertNotesAsync(experimentNotes);
+
+        res.success({
+            message: `Notes saved for experiment ${experimentId}`,
+            notes: experimentNotes.toApiFormat(),
+            savedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error saving notes for ${req.params.experimentId}:`, error);
+        res.error(`Failed to save experiment notes: ${error.message}`, 500);
+    }
+});
+
+/**
+ * DELETE /api/experiments/:experimentId/notes
+ * Delete user notes for experiment
+ */
+router.delete('/:experimentId/notes', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Deleting notes for experiment: ${experimentId}`);
+
+        const deleted = await notesRepository.deleteNotesAsync(experimentId);
+        
+        if (deleted) {
+            res.success({
+                message: `Notes deleted for experiment ${experimentId}`,
+                experimentId: experimentId,
+                deletedAt: new Date().toISOString()
+            });
+        } else {
+            res.success({
+                message: `No notes found to delete for experiment ${experimentId}`,
+                experimentId: experimentId
+            });
+        }
+
+    } catch (error) {
+        console.error(`Error deleting notes for ${req.params.experimentId}:`, error);
+        res.error(`Failed to delete experiment notes: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/full
+ * Get complete experiment data: experiment + metadata + notes + summary
+ */
+router.get('/:experimentId/full', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { refreshSummary = false } = req.query;
+        const forceRefreshSummary = refreshSummary === 'true' || refreshSummary === true;
+
+        console.log(`Getting full experiment data for: ${experimentId}`);
+
+        // Get base experiment data
+        const repository = new ExperimentRepository();
+        const experimentData = await repository.getExperimentWithMetadataAsync(experimentId);
+        
+        if (!experimentData) {
+            return res.error(`Experiment not found: ${experimentId}`, 404);
+        }
+
+        // Get notes
+        const notes = await notesRepository.getNotesAsync(experimentId);
+        
+        // Get summary
+        if (forceRefreshSummary) {
+            summaryService.clearSummaryCache(experimentId);
+        }
+        const summary = await summaryService.computeExperimentSummary(experimentId);
+
+        // Combine all data
+        const fullData = {
+            experiment: experimentData.experiment,
+            metadata: experimentData.metadata,
+            notes: notes ? notes.toApiFormat() : {
+                experimentId: experimentId,
+                notes: '',
+                isEmpty: true,
+                wordCount: 0,
+                characterCount: 0
+            },
+            summary: summary.toDisplayFormat(),
+            retrievedAt: new Date().toISOString()
+        };
+
+        res.success(fullData);
+
+    } catch (error) {
+        console.error(`Error getting full experiment data for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get full experiment data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/summaries/bulk
+ * Get summaries for multiple experiments
+ */
+router.post('/summaries/bulk', async (req, res) => {
+    try {
+        const { experimentIds, refresh = false } = req.body;
+
+        // Validate request body
+        if (!Array.isArray(experimentIds)) {
+            return res.error('experimentIds must be an array', 400);
+        }
+
+        if (experimentIds.length === 0) {
+            return res.error('experimentIds cannot be empty', 400);
+        }
+
+        if (experimentIds.length > 50) {
+            return res.error('Maximum 50 experiments per request', 400);
+        }
+
+        console.log(`Getting bulk summaries for ${experimentIds.length} experiments`);
+
+        // Clear cache if refresh requested
+        if (refresh) {
+            experimentIds.forEach(id => summaryService.clearSummaryCache(id));
+        }
+
+        // Compute summaries
+        const summaries = await summaryService.computeMultipleSummaries(experimentIds);
+        
+        // Format for response
+        const formattedSummaries = summaries.map(summary => ({
+            experimentId: summary.experimentId,
+            summary: summary.toDisplayFormat(),
+            bulletPoints: summary.getBulletPoints()
+        }));
+
+        res.success({
+            summaries: formattedSummaries,
+            totalRequested: experimentIds.length,
+            totalProcessed: summaries.length,
+            processedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error getting bulk summaries:', error);
+        res.error(`Failed to get bulk summaries: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/summaries/refresh-all
+ * Refresh all experiment summaries (clear all cache)
+ */
+router.post('/summaries/refresh-all', async (req, res) => {
+    try {
+        console.log('Refreshing all experiment summaries...');
+
+        const refreshedCount = await summaryService.refreshAllSummaries();
+
+        res.success({
+            message: 'All experiment summaries refreshed successfully',
+            refreshedCount: refreshedCount,
+            refreshedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error refreshing all summaries:', error);
+        res.error(`Failed to refresh all summaries: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/summaries/status
+ * Get summary service status and cache information
+ */
+router.get('/summaries/status', async (req, res) => {
+    try {
+        const healthStatus = await summaryService.getHealthStatus();
+        const notesStats = await notesRepository.getNotesStatsAsync();
+        
+        res.success({
+            summaryService: healthStatus,
+            notesStatistics: notesStats,
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error getting summary service status:', error);
+        res.error(`Failed to get summary service status: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/summaries/clear-cache
+ * Clear all summary cache
+ */
+router.post('/summaries/clear-cache', async (req, res) => {
+    try {
+        console.log('Clearing all summary cache...');
+
+        summaryService.clearAllCache();
+
+        res.success({
+            message: 'All summary cache cleared successfully',
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error clearing summary cache:', error);
+        res.error(`Failed to clear summary cache: ${error.message}`, 500);
     }
 });
 

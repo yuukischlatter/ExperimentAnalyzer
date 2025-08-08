@@ -41,6 +41,7 @@ async function initializeDatabase() {
         
         // Read and execute schema files
         const schemaPath = path.join(__dirname, 'schema', 'DatabaseSchema.sql');
+        const notesSchemaPath = path.join(__dirname, 'schema', 'ExperimentNotes.sql');
         const indexPath = path.join(__dirname, 'schema', 'Indexes.sql');
 
         // Execute main schema
@@ -50,6 +51,15 @@ async function initializeDatabase() {
             console.log('✓ Database schema created/updated');
         } else {
             console.warn('⚠ DatabaseSchema.sql not found, skipping schema creation');
+        }
+
+        // Execute experiment notes schema
+        if (await fileExists(notesSchemaPath)) {
+            const notesSchema = await fs.readFile(notesSchemaPath, 'utf8');
+            await executeSQL(database, notesSchema);
+            console.log('✓ Experiment notes schema created/updated');
+        } else {
+            console.warn('⚠ ExperimentNotes.sql not found, skipping notes schema creation');
         }
 
         // Execute indexes
