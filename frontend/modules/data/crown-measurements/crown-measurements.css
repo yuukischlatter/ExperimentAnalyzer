@@ -59,7 +59,6 @@
 /* === CONTENT SECTION (UPDATED FOR GENERIC FOLDING) === */
 .crown-measurements-content {
     position: relative;
-    min-height: 1400px; /* 4 sections × ~300px + spacing */
     background-color: var(--bg-white);
     transition: all var(--transition-slow);
     overflow: hidden;

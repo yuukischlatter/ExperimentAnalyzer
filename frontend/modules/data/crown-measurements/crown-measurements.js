@@ -3,6 +3,7 @@
  * Displays crown measurement data with 4 sections: warm side, cold side, top view, calculated values
  * Integrates with crown measurement backend service (Excel + Journal hybrid)
  * Features: Warm/Cold comparison, Top view geometry, Calculated AD values
+ * UPDATED: Added complete rail structure to side views matching Python implementation
  */
 
 class CrownMeasurements {
@@ -309,7 +310,7 @@ class CrownMeasurements {
     }
     
     /**
-     * Create warm side view plot (journal data)
+     * Create warm side view plot (journal data) - WITH COMPLETE RAIL STRUCTURE
      */
     async createWarmSidePlot() {
         const channelData = this.state.channelData.crown_warm_side;
@@ -320,72 +321,154 @@ class CrownMeasurements {
         const data = channelData.data;
         const traces = [];
         
-        // Create side view plot with inlet and outlet measurements
+        // 1. RAIL STRUCTURE FRAMEWORK (like Python)
+        const yPositions = [0, 12, 110, 160]; // Rail structural heights
+        const xRange = [-600, 600];
+        
+        // Horizontal structural lines
+        for (const yPos of yPositions) {
+            traces.push({
+                x: xRange,
+                y: [yPos, yPos],
+                type: 'scatter',
+                mode: 'lines',
+                name: '',
+                line: { color: 'black', width: 2 },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+        }
+        
+        // Vertical end connection lines
+        traces.push({
+            x: [-600, -600],
+            y: [0, 160],
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: 'black', width: 2 },
+            showlegend: false,
+            hoverinfo: 'skip'
+        });
+        
+        traces.push({
+            x: [600, 600],
+            y: [0, 160],
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: 'black', width: 2 },
+            showlegend: false,
+            hoverinfo: 'skip'
+        });
+        
+        // 2. SUPPORT POINTS at height 160mm
+        for (const xPos of [500, -500]) {
+            traces.push({
+                x: [xPos],
+                y: [160],
+                type: 'scatter',
+                mode: 'markers',
+                marker: { color: 'green', size: 8, symbol: 'square' },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+        }
+        
+        // 3. CROWN MEASUREMENTS (warm data from journal)
         const positions = [data.positions.outlet.x, data.positions.inlet.x]; // [-50, 50]
         const heights = [data.outlet, data.inlet]; // Warm measurements
         const labels = ['Outlet (Auslauf)', 'Inlet (Einlauf)'];
         
-        // Main trace: Warm crown profile
-        traces.push({
-            x: positions,
-            y: heights,
-            type: 'scatter',
-            mode: 'lines+markers',
-            name: 'Warm Crown Profile',
-            line: { 
-                color: this.config.colors.warm,
-                width: 3
-            },
-            marker: {
-                color: this.config.colors.warm,
-                size: 10,
-                symbol: 'circle'
-            },
-            hovertemplate: 
-                '<b>%{text}</b><br>' +
-                'Position: %{x} mm<br>' +
-                'Height: %{y:.3f} mm<br>' +
-                '<extra></extra>',
-            text: labels
-        });
+        for (let i = 0; i < positions.length; i++) {
+            const xPos = positions[i];
+            const baseHeight = 160; // Rail top surface
+            const actualHeight = baseHeight + (heights[i] * this.config.scalingFactor); // 30x scaling
+            
+            // Nominal position (gray)
+            traces.push({
+                x: [xPos],
+                y: [baseHeight],
+                type: 'scatter',
+                mode: 'markers',
+                marker: { color: 'lightgray', size: 6 },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+            
+            // Actual position (warm color)
+            traces.push({
+                x: [xPos],
+                y: [actualHeight],
+                type: 'scatter',
+                mode: 'markers',
+                marker: { color: this.config.colors.warm, size: 8 },
+                showlegend: false,
+                hovertemplate: 
+                    `<b>${labels[i]}</b><br>` +
+                    `Position: ${xPos} mm<br>` +
+                    `Height deviation: ${heights[i].toFixed(3)} mm<br>` +
+                    `Actual height: ${actualHeight.toFixed(1)} mm<br>` +
+                    '<extra></extra>'
+            });
+            
+            // Rail line from support to measurement to center
+            const supportX = xPos > 0 ? 500 : -500;
+            
+            // Calculate slope and Y at center (X=0)
+            let yAtX0;
+            if (actualHeight !== baseHeight) {
+                const slope = (actualHeight - baseHeight) / (xPos - supportX);
+                yAtX0 = actualHeight + (0 - xPos) * slope;
+            } else {
+                yAtX0 = actualHeight;
+            }
+            
+            traces.push({
+                x: [supportX, xPos, 0],
+                y: [baseHeight, actualHeight, yAtX0],
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: this.config.colors.warm, width: 3 },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+        }
         
-        // Add reference line at y=0
+        // 4. LEGEND TRACE for warm measurements
         traces.push({
-            x: [-100, 100],
-            y: [0, 0],
+            x: [null],
+            y: [null],
             type: 'scatter',
-            mode: 'lines',
-            name: 'Reference Line',
-            line: { 
-                color: this.config.colors.reference,
-                width: 1,
-                dash: 'dash'
-            },
-            hovertemplate: '<b>Reference</b><br>Height: 0 mm<extra></extra>'
+            mode: 'markers',
+            marker: { color: this.config.colors.warm, size: 10 },
+            name: 'Warm Crown Profile',
+            showlegend: true
         });
         
         const layout = {
             title: { text: '', font: { size: 0 } },
             
             xaxis: {
-                title: 'Position [mm]',
+                title: 'X-Position [mm]',
                 showgrid: true,
                 gridcolor: 'rgba(255, 87, 34, 0.1)',
                 tickfont: { color: '#666666' },
-                range: [-80, 80]
+                range: [-650, 650],
+                zeroline: true,
+                zerolinecolor: 'black'
             },
             
             yaxis: {
                 title: { 
-                    text: 'Crown Height [mm]', 
+                    text: 'Height [mm]', 
                     font: { color: this.config.colors.warm, size: 14 }
                 },
                 showgrid: true,
                 gridcolor: 'rgba(255, 87, 34, 0.1)',
                 tickfont: { color: this.config.colors.warm },
                 titlefont: { color: this.config.colors.warm },
+                range: [-10, 200],
                 zeroline: true,
-                zerolinecolor: 'rgba(255, 87, 34, 0.3)'
+                zerolinecolor: 'black'
             },
             
             legend: {
@@ -414,7 +497,7 @@ class CrownMeasurements {
     }
     
     /**
-     * Create cold side view plot (Excel data)
+     * Create cold side view plot (Excel data) - WITH COMPLETE RAIL STRUCTURE
      */
     async createColdSidePlot() {
         const channelData = this.state.channelData.crown_cold_side;
@@ -425,72 +508,154 @@ class CrownMeasurements {
         const data = channelData.data;
         const traces = [];
         
-        // Create side view plot with inlet and outlet measurements
+        // 1. RAIL STRUCTURE FRAMEWORK (like Python)
+        const yPositions = [0, 12, 110, 160]; // Rail structural heights
+        const xRange = [-600, 600];
+        
+        // Horizontal structural lines
+        for (const yPos of yPositions) {
+            traces.push({
+                x: xRange,
+                y: [yPos, yPos],
+                type: 'scatter',
+                mode: 'lines',
+                name: '',
+                line: { color: 'black', width: 2 },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+        }
+        
+        // Vertical end connection lines
+        traces.push({
+            x: [-600, -600],
+            y: [0, 160],
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: 'black', width: 2 },
+            showlegend: false,
+            hoverinfo: 'skip'
+        });
+        
+        traces.push({
+            x: [600, 600],
+            y: [0, 160],
+            type: 'scatter',
+            mode: 'lines',
+            line: { color: 'black', width: 2 },
+            showlegend: false,
+            hoverinfo: 'skip'
+        });
+        
+        // 2. SUPPORT POINTS at height 160mm
+        for (const xPos of [500, -500]) {
+            traces.push({
+                x: [xPos],
+                y: [160],
+                type: 'scatter',
+                mode: 'markers',
+                marker: { color: 'green', size: 8, symbol: 'square' },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+        }
+        
+        // 3. CROWN MEASUREMENTS (cold data from Excel)
         const positions = [data.positions.outlet.x, data.positions.inlet.x]; // [-50, 50]
         const heights = [data.outlet, data.inlet]; // Cold measurements
         const labels = ['Outlet (J18)', 'Inlet (N18)'];
         
-        // Main trace: Cold crown profile
-        traces.push({
-            x: positions,
-            y: heights,
-            type: 'scatter',
-            mode: 'lines+markers',
-            name: 'Cold Crown Profile',
-            line: { 
-                color: this.config.colors.cold,
-                width: 3
-            },
-            marker: {
-                color: this.config.colors.cold,
-                size: 10,
-                symbol: 'circle'
-            },
-            hovertemplate: 
-                '<b>%{text}</b><br>' +
-                'Position: %{x} mm<br>' +
-                'Height: %{y:.3f} mm<br>' +
-                '<extra></extra>',
-            text: labels
-        });
+        for (let i = 0; i < positions.length; i++) {
+            const xPos = positions[i];
+            const baseHeight = 160; // Rail top surface
+            const actualHeight = baseHeight + (heights[i] * this.config.scalingFactor); // 30x scaling
+            
+            // Nominal position (gray)
+            traces.push({
+                x: [xPos],
+                y: [baseHeight],
+                type: 'scatter',
+                mode: 'markers',
+                marker: { color: 'lightgray', size: 6 },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+            
+            // Actual position (cold color)
+            traces.push({
+                x: [xPos],
+                y: [actualHeight],
+                type: 'scatter',
+                mode: 'markers',
+                marker: { color: this.config.colors.cold, size: 8 },
+                showlegend: false,
+                hovertemplate: 
+                    `<b>${labels[i]}</b><br>` +
+                    `Position: ${xPos} mm<br>` +
+                    `Height deviation: ${heights[i].toFixed(3)} mm<br>` +
+                    `Actual height: ${actualHeight.toFixed(1)} mm<br>` +
+                    '<extra></extra>'
+            });
+            
+            // Rail line from support to measurement to center
+            const supportX = xPos > 0 ? 500 : -500;
+            
+            // Calculate slope and Y at center (X=0)
+            let yAtX0;
+            if (actualHeight !== baseHeight) {
+                const slope = (actualHeight - baseHeight) / (xPos - supportX);
+                yAtX0 = actualHeight + (0 - xPos) * slope;
+            } else {
+                yAtX0 = actualHeight;
+            }
+            
+            traces.push({
+                x: [supportX, xPos, 0],
+                y: [baseHeight, actualHeight, yAtX0],
+                type: 'scatter',
+                mode: 'lines',
+                line: { color: this.config.colors.cold, width: 3 },
+                showlegend: false,
+                hoverinfo: 'skip'
+            });
+        }
         
-        // Add reference line at y=0
+        // 4. LEGEND TRACE for cold measurements
         traces.push({
-            x: [-100, 100],
-            y: [0, 0],
+            x: [null],
+            y: [null],
             type: 'scatter',
-            mode: 'lines',
-            name: 'Reference Line',
-            line: { 
-                color: this.config.colors.reference,
-                width: 1,
-                dash: 'dash'
-            },
-            hovertemplate: '<b>Reference</b><br>Height: 0 mm<extra></extra>'
+            mode: 'markers',
+            marker: { color: this.config.colors.cold, size: 10 },
+            name: 'Cold Crown Profile',
+            showlegend: true
         });
         
         const layout = {
             title: { text: '', font: { size: 0 } },
             
             xaxis: {
-                title: 'Position [mm]',
+                title: 'X-Position [mm]',
                 showgrid: true,
                 gridcolor: 'rgba(33, 150, 243, 0.1)',
                 tickfont: { color: '#666666' },
-                range: [-80, 80]
+                range: [-650, 650],
+                zeroline: true,
+                zerolinecolor: 'black'
             },
             
             yaxis: {
                 title: { 
-                    text: 'Crown Height [mm]', 
+                    text: 'Height [mm]', 
                     font: { color: this.config.colors.cold, size: 14 }
                 },
                 showgrid: true,
                 gridcolor: 'rgba(33, 150, 243, 0.1)',
                 tickfont: { color: this.config.colors.cold },
                 titlefont: { color: this.config.colors.cold },
+                range: [-10, 200],
                 zeroline: true,
-                zerolinecolor: 'rgba(33, 150, 243, 0.3)'
+                zerolinecolor: 'black'
             },
             
             legend: {
@@ -519,7 +684,7 @@ class CrownMeasurements {
     }
     
     /**
-     * Create top view plot (Excel lateral deviations - converted from Python script)
+     * Create top view plot (Excel lateral deviations - KEEP AS IS, IT'S CORRECT)
      */
     async createTopViewPlot() {
         const channelData = this.state.channelData.crown_top_view;
