@@ -1,0 +1,273 @@
+<!-- Experiment Summary Module Template - Executive Overview -->
+<div class="experiment-summary-container">
+    
+    <!-- Module Header (standardized structure for folding) -->
+    <div class="experiment-summary-header card-header">
+        <div class="flex items-center justify-between">
+            <div class="experiment-summary-title">
+                <h3 class="card-title">Experiment Summary</h3>
+                <p class="text-sm text-secondary" data-bind="experimentInfo">Executive overview of key metrics and results</p>
+            </div>
+            
+            <div class="experiment-summary-actions">
+                <button data-bind="refreshBtn" class="btn btn-secondary btn-sm" title="Refresh summary data">
+                    <span>↻</span> Refresh
+                </button>
+                <!-- Fold arrow will be inserted here by folding script -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- Module Content -->
+    <div class="experiment-summary-content">
+        
+        <!-- Loading State -->
+        <div data-bind="loadingSpinner" class="loading-state hidden">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <p>Computing experiment summary...</p>
+                <p class="text-sm text-secondary">Analyzing data from all available sources</p>
+            </div>
+        </div>
+        
+        <!-- Error State -->
+        <div data-bind="errorMessage" class="error-state hidden">
+            <div class="error-content">
+                <h4>Summary Not Available</h4>
+                <p data-bind="errorText">Unable to compute experiment summary.</p>
+                <button data-bind="retryBtn" class="btn btn-primary btn-sm">Retry</button>
+            </div>
+        </div>
+        
+        <!-- Summary Content Container -->
+        <div data-bind="summaryContainer" class="summary-container hidden">
+            
+            <!-- Overview Cards Row -->
+            <div class="overview-cards">
+                
+                <!-- Experiment Info Card -->
+                <div class="summary-card info-card">
+                    <div class="card-header">
+                        <h4 class="card-title">Experiment Details</h4>
+                    </div>
+                    <div class="card-content">
+                        <div class="info-grid">
+                            <div class="info-column">
+                                <div class="info-item">
+                                    <span class="info-label">Program:</span>
+                                    <span data-bind="programInfo" class="info-value">--</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Material:</span>
+                                    <span data-bind="materialInfo" class="info-value">--</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Operator:</span>
+                                    <span data-bind="operatorInfo" class="info-value">--</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Oil Temp:</span>
+                                    <span data-bind="oilTempInfo" class="info-value">--</span>
+                                </div>
+                            </div>
+                            <div class="info-column">
+                                <div class="info-item">
+                                    <span class="info-label">Date:</span>
+                                    <span data-bind="dateInfo" class="info-value">--</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Inlet Rail:</span>
+                                    <span data-bind="inletRailInfo" class="info-value rail-id">--</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">Outlet Rail:</span>
+                                    <span data-bind="outletRailInfo" class="info-value rail-id">--</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+            </div>
+            
+            <!-- Detailed Sections Row -->
+            <div class="detail-sections">
+                
+                <!-- Welding Performance Section -->
+                <div class="summary-section welding-section">
+                    <div class="section-header">
+                        <h4 class="section-title">Welding Performance</h4>
+                        <span data-bind="weldingDataSource" class="data-source">Binary Data</span>
+                    </div>
+                    <div class="section-content">
+                        <div class="performance-grid">
+                            <div class="perf-item">
+                                <span class="perf-label">Peak Current GR1</span>
+                                <span data-bind="peakCurrentGR1" class="perf-value">-- A</span>
+                            </div>
+                            <div class="perf-item">
+                                <span class="perf-label">Peak Current GR2</span>
+                                <span data-bind="peakCurrentGR2" class="perf-value">-- A</span>
+                            </div>
+                            <div class="perf-item">
+                                <span class="perf-label">Max Voltage</span>
+                                <span data-bind="maxVoltage" class="perf-value">-- V</span>
+                            </div>
+                            <div class="perf-item">
+                                <span class="perf-label">Max Pressure</span>
+                                <span data-bind="maxPressure" class="perf-value">-- Bar</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Break Test Section -->
+                <div class="summary-section break-test-section">
+                    <div class="section-header">
+                        <h4 class="section-title">Break Test</h4>
+                        <span data-bind="breakTestDataSource" class="data-source">Tensile CSV</span>
+                    </div>
+                    <div class="section-content">
+                        <div class="break-test-grid">
+                            <div class="break-test-item">
+                                <span class="break-test-label">Result Force</span>
+                                <span data-bind="tensileValue" class="break-test-value">-- kN</span>
+                            </div>
+                            <div class="break-test-item">
+                                <span class="break-test-label">Target Force</span>
+                                <span data-bind="targetForceValue" class="break-test-value">-- kN</span>
+                            </div>
+                            <div class="break-test-item">
+                                <span class="break-test-label">Max Displacement</span>
+                                <span data-bind="maxDisplacementValue" class="break-test-value">-- mm</span>
+                            </div>
+                            <div class="break-test-item">
+                                <span class="break-test-label">Target Displacement</span>
+                                <span data-bind="targetDisplacementValue" class="break-test-value">-- mm</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Temperature Monitoring Section -->
+                <div class="summary-section temperature-section">
+                    <div class="section-header">
+                        <h4 class="section-title">Temperature Monitoring</h4>
+                        <span data-bind="tempDataSource" class="data-source">Temperature CSV</span>
+                    </div>
+                    <div class="section-content">
+                        <div class="temp-grid">
+                            <div class="temp-item">
+                                <span class="temp-label">Welding Range</span>
+                                <span data-bind="weldingTempRange" class="temp-value">-- °C</span>
+                            </div>
+                            <div class="temp-item">
+                                <span class="temp-label">Ambient Range</span>
+                                <span data-bind="ambientTempRange" class="temp-value">-- °C</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Crown Measurements Section -->
+                <div class="summary-section crown-section">
+                    <div class="section-header">
+                        <h4 class="section-title">Crown Measurements</h4>
+                        <span data-bind="crownDataSource" class="data-source">Journal + Excel</span>
+                    </div>
+                    <div class="section-content">
+                        <div class="crown-grid">
+                            <div class="crown-item">
+                                <span class="crown-label">Inlet (Warm/Cold)</span>
+                                <div class="crown-values">
+                                    <span data-bind="crownInletWarm" class="crown-value warm">--</span>
+                                    <span class="crown-separator">/</span>
+                                    <span data-bind="crownInletCold" class="crown-value cold">-- mm</span>
+                                </div>
+                            </div>
+                            <div class="crown-item">
+                                <span class="crown-label">Outlet (Warm/Cold)</span>
+                                <div class="crown-values">
+                                    <span data-bind="crownOutletWarm" class="crown-value warm">--</span>
+                                    <span class="crown-separator">/</span>
+                                    <span data-bind="crownOutletCold" class="crown-value cold">-- mm</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Rail Movement Section -->
+                <div class="summary-section position-section">
+                    <div class="section-header">
+                        <h4 class="section-title">Rail Movement</h4>
+                        <span data-bind="positionDataSource" class="data-source">Position CSV</span>
+                    </div>
+                    <div class="section-content">
+                        <div class="position-grid">
+                            <div class="position-item">
+                                <span class="position-label">Total Displacement</span>
+                                <span data-bind="totalDisplacement" class="position-value">-- mm</span>
+                            </div>
+                            <div class="position-item">
+                                <span class="position-label">Position Range</span>
+                                <span data-bind="positionRange" class="position-value">-- mm</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Vibration Analysis Section -->
+                <div class="summary-section vibration-section">
+                    <div class="section-header">
+                        <h4 class="section-title">Vibration Analysis</h4>
+                        <span data-bind="vibrationDataSource" class="data-source">Acceleration CSV</span>
+                    </div>
+                    <div class="section-content">
+                        <div class="vibration-grid">
+                            <div class="vibration-item">
+                                <span class="vib-label">Peak Acceleration</span>
+                                <span data-bind="peakAcceleration" class="vib-value">-- m/s²</span>
+                            </div>
+                            <div class="vibration-item">
+                                <span class="vib-label">RMS Magnitude</span>
+                                <span data-bind="rmsMagnitude" class="vib-value">-- m/s²</span>
+                            </div>
+                            <div class="vibration-item">
+                                <span class="vib-label">Max Axis (X/Y/Z)</span>
+                                <span data-bind="maxAxisValues" class="vib-value">-- / -- / -- m/s²</span>
+                            </div>
+                            <div class="vibration-item">
+                                <span class="vib-label">Sampling Rate</span>
+                                <span data-bind="samplingRate" class="vib-value">-- Hz</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+            </div>
+            
+            <!-- File Availability Footer -->
+            <div class="file-availability-footer">
+                <div class="file-summary">
+                    <div class="file-header">
+                        <h4 class="file-title">Data Availability</h4>
+                        <div class="file-completeness">
+                            <span data-bind="fileCompleteness" class="completeness-percentage">--%</span>
+                            <span class="completeness-label">Complete</span>
+                        </div>
+                    </div>
+                    <div class="file-indicators-grid">
+                        <div data-bind="fileIndicators" class="file-indicators-list">
+                            <!-- File indicators populated by JavaScript -->
+                        </div>
+                    </div>
+                    
+                </div>
+            </div>
+            
+        </div>
+        
+    </div>
+    
+</div>

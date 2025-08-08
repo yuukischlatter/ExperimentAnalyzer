@@ -1,7 +1,7 @@
 /**
  * Experiment Analyzer - Main Application Controller
  * Manages module loading, global state, and inter-module communication
- * UPDATED: Added folding integration events
+ * UPDATED: Added experiment summary integration
  */
 
 class ExperimentAnalyzer {
@@ -195,8 +195,8 @@ class ExperimentAnalyzer {
      * Get module file path based on module name
      */
     getModulePath(moduleName) {
-        // Core modules (experiment browser, etc.)
-        if (['experiment-browser'].includes(moduleName)) {
+        // Core modules (experiment browser, summary, etc.)
+        if (['experiment-browser', 'experiment-summary'].includes(moduleName)) {
             return `/modules/core/${moduleName}`;
         }
         
@@ -287,6 +287,7 @@ class ExperimentAnalyzer {
     
     /**
      * Handle experiment selection from browser module
+     * UPDATED: Load summary module first, then data modules
      */
     async handleExperimentSelected(event) {
         try {
@@ -298,10 +299,13 @@ class ExperimentAnalyzer {
             this.currentExperiment = { experimentId, experiment, metadata };
             this.state.currentExperiment = this.currentExperiment;
             
-            // Show data modules container
+            // STEP 1: Load and show experiment summary module FIRST
+            await this.loadExperimentSummary(experimentId);
+            
+            // STEP 2: Show data modules container
             this.showDataModules();
             
-            // Load data modules based on available files
+            // STEP 3: Load data modules based on available files
             await this.loadDataModulesForExperiment(experiment);
             
             // Update URL (optional)
@@ -318,6 +322,44 @@ class ExperimentAnalyzer {
                     recoverable: true
                 }
             });
+        }
+    }
+    
+    /**
+     * NEW: Load and initialize experiment summary module
+     */
+    async loadExperimentSummary(experimentId) {
+        try {
+            console.log(`Loading experiment summary for: ${experimentId}`);
+            
+            const containerId = 'experiment-summary-container';
+            
+            // Load summary module
+            const summaryModule = await this.loadModule('experiment-summary', containerId, {
+                experimentId: experimentId,
+                experiment: this.currentExperiment.experiment,
+                metadata: this.currentExperiment.metadata
+            });
+            
+            // Show the summary container
+            const container = document.getElementById(containerId);
+            if (container) {
+                container.classList.remove('hidden');
+            }
+            
+            // Load experiment data into summary module
+            if (summaryModule && typeof summaryModule.loadExperiment === 'function') {
+                await summaryModule.loadExperiment(experimentId);
+            }
+            
+            console.log(`Experiment summary loaded successfully for ${experimentId}`);
+            
+        } catch (error) {
+            console.error(`Failed to load experiment summary for ${experimentId}:`, error);
+            
+            // Don't fail the entire loading process - summary is helpful but not critical
+            // Just log the error and continue
+            this.showNotification(`Summary loading failed: ${error.message}`, 'warning');
         }
     }
     

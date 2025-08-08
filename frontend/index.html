@@ -48,6 +48,11 @@
                     <!-- Experiment browser module will be loaded here -->
                 </section>
 
+                <!-- NEW: Module Container: Experiment Summary (ADDED AFTER BROWSER) -->
+                <section id="experiment-summary-container" class="module-container foldable-module hidden">
+                    <!-- experiment-summary module loads here -->
+                </section>
+
                 <!-- Module Container: Data Visualization Modules -->
                 <section id="data-modules-container" class="module-container hidden">
                     <div class="data-modules-grid">
@@ -172,6 +177,7 @@
 
     <!-- Module Scripts (loaded dynamically by app.js) -->
     <!-- experiment-browser module will be loaded first -->
+    <!-- experiment-summary module will be loaded after experiment selection -->
     <!-- Other modules loaded on demand when experiments are selected -->
 
 </body>
@@ -544,6 +550,15 @@ document.addEventListener('DOMContentLoaded', function() {
     const expBrowserContainer = document.getElementById('experiment-browser-container');
     if (expBrowserContainer) {
         observer.observe(expBrowserContainer, {
+            childList: true,
+            subtree: true
+        });
+    }
+    
+    // NEW: Also observe experiment summary container
+    const expSummaryContainer = document.getElementById('experiment-summary-container');
+    if (expSummaryContainer) {
+        observer.observe(expSummaryContainer, {
             childList: true,
             subtree: true
         });
