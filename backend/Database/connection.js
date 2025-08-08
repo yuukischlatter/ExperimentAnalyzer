@@ -1,6 +1,7 @@
 /**
  * Database Connection Management
  * SQLite connection and initialization (equivalent to C# IDbConnection setup)
+ * MODIFIED: Added ExperimentSummaries.sql schema loading
  */
 
 const sqlite3 = require('sqlite3').verbose();
@@ -34,17 +35,19 @@ function getDatabase() {
 
 /**
  * Initialize database schema (equivalent to C# InitializeDatabaseAsync)
+ * MODIFIED: Added experiment summaries schema loading
  */
 async function initializeDatabase() {
     try {
         const database = getDatabase();
         
-        // Read and execute schema files
+        // Define schema file paths
         const schemaPath = path.join(__dirname, 'schema', 'DatabaseSchema.sql');
         const notesSchemaPath = path.join(__dirname, 'schema', 'ExperimentNotes.sql');
+        const summariesSchemaPath = path.join(__dirname, 'schema', 'ExperimentSummaries.sql');
         const indexPath = path.join(__dirname, 'schema', 'Indexes.sql');
 
-        // Execute main schema
+        // Execute main schema (experiments + metadata tables)
         if (await fileExists(schemaPath)) {
             const schema = await fs.readFile(schemaPath, 'utf8');
             await executeSQL(database, schema);
@@ -62,6 +65,15 @@ async function initializeDatabase() {
             console.warn('⚠ ExperimentNotes.sql not found, skipping notes schema creation');
         }
 
+        // Execute experiment summaries schema (NEW)
+        if (await fileExists(summariesSchemaPath)) {
+            const summariesSchema = await fs.readFile(summariesSchemaPath, 'utf8');
+            await executeSQL(database, summariesSchema);
+            console.log('✓ Experiment summaries schema created/updated');
+        } else {
+            console.warn('⚠ ExperimentSummaries.sql not found, skipping summaries schema creation');
+        }
+
         // Execute indexes
         if (await fileExists(indexPath)) {
             const indexes = await fs.readFile(indexPath, 'utf8');
@@ -71,10 +83,50 @@ async function initializeDatabase() {
             console.warn('⚠ Indexes.sql not found, skipping index creation');
         }
 
+        // Verify critical tables exist
+        await verifyDatabaseTables(database);
+
         return true;
     } catch (error) {
         console.error('Database initialization failed:', error);
         throw error;
+    }
+}
+
+/**
+ * Verify that all critical database tables exist (NEW)
+ */
+async function verifyDatabaseTables(database) {
+    const criticalTables = [
+        'experiments',
+        'experiment_metadata', 
+        'experiment_notes',
+        'experiment_summaries'
+    ];
+
+    console.log('🔍 Verifying database tables...');
+    
+    for (const tableName of criticalTables) {
+        try {
+            const result = await querySingleAsync(`
+                SELECT name FROM sqlite_master 
+                WHERE type='table' AND name='${tableName}'
+            `);
+            
+            if (result) {
+                console.log(`  ✓ Table '${tableName}' exists`);
+                
+                // Get row count for non-empty tables
+                const countResult = await querySingleAsync(`SELECT COUNT(*) as count FROM ${tableName}`);
+                if (countResult && countResult.count > 0) {
+                    console.log(`    📊 ${countResult.count} rows`);
+                }
+            } else {
+                console.warn(`  ⚠ Table '${tableName}' missing!`);
+            }
+        } catch (error) {
+            console.error(`  ❌ Error checking table '${tableName}':`, error.message);
+        }
     }
 }
 
@@ -158,6 +210,69 @@ async function getExperimentCount() {
 }
 
 /**
+ * Get summary count (NEW helper function)
+ */
+async function getSummaryCount() {
+    try {
+        const result = await querySingleAsync('SELECT COUNT(*) as count FROM experiment_summaries');
+        return result ? result.count : 0;
+    } catch (error) {
+        console.error('Error getting summary count:', error);
+        return 0;
+    }
+}
+
+/**
+ * Get database statistics (NEW)
+ */
+async function getDatabaseStats() {
+    try {
+        const stats = {
+            experiments: await getExperimentCount(),
+            summaries: await getSummaryCount()
+        };
+        
+        // Get notes count
+        try {
+            const notesResult = await querySingleAsync('SELECT COUNT(*) as count FROM experiment_notes');
+            stats.notes = notesResult ? notesResult.count : 0;
+        } catch (error) {
+            stats.notes = 0;
+        }
+        
+        // Get summary completion stats
+        try {
+            const summaryStats = await querySingleAsync(`
+                SELECT 
+                    COUNT(CASE WHEN computation_status = 'complete' THEN 1 END) as complete,
+                    COUNT(CASE WHEN computation_status = 'partial' THEN 1 END) as partial,
+                    COUNT(CASE WHEN computation_status = 'failed' THEN 1 END) as failed
+                FROM experiment_summaries
+            `);
+            stats.summariesComplete = summaryStats?.complete || 0;
+            stats.summariesPartial = summaryStats?.partial || 0;
+            stats.summariesFailed = summaryStats?.failed || 0;
+        } catch (error) {
+            stats.summariesComplete = 0;
+            stats.summariesPartial = 0;
+            stats.summariesFailed = 0;
+        }
+        
+        return stats;
+    } catch (error) {
+        console.error('Error getting database statistics:', error);
+        return {
+            experiments: 0,
+            summaries: 0,
+            notes: 0,
+            summariesComplete: 0,
+            summariesPartial: 0,
+            summariesFailed: 0
+        };
+    }
+}
+
+/**
  * Close database connection
  */
 function closeDatabase() {
@@ -197,5 +312,7 @@ module.exports = {
     querySingleAsync,
     executeAsync,
     getExperimentCount,
+    getSummaryCount,        
+    getDatabaseStats,       
     closeDatabase
 };

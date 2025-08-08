@@ -1,4 +1,4 @@
-<!-- Experiment Summary Module Template - Executive Overview -->
+<!-- Experiment Summary Module Template - FIXED VERSION -->
 <div class="experiment-summary-container">
     
     <!-- Module Header (standardized structure for folding) -->
@@ -18,8 +18,8 @@
         </div>
     </div>
     
-    <!-- Module Content -->
-    <div class="experiment-summary-content">
+    <!-- Module Content - FIXED: Added module-content class for proper folding -->
+    <div class="experiment-summary-content module-content">
         
         <!-- Loading State -->
         <div data-bind="loadingSpinner" class="loading-state hidden">
@@ -260,12 +260,13 @@
                     <div class="file-indicators-grid">
                         <div data-bind="fileIndicators" class="file-indicators-list">
                             <!-- File indicators populated by JavaScript -->
+                            <!-- FIXED: Will now use browser module colors, not override them -->
                         </div>
                     </div>
                 </div>
             </div>
             
-            <!-- NEW: Experiment Notes Section -->
+            <!-- Experiment Notes Section -->
             <div class="experiment-notes-section">
                 <div class="notes-header">
                     <h4 class="notes-title">Experiment Notes</h4>

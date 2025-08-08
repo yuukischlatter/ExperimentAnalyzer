@@ -1,7 +1,7 @@
 /**
- * Experiment Summary Module - Complete Styles (Desktop Only)
+ * Experiment Summary Module - FIXED VERSION
  * Comprehensive styling for executive summary overview
- * NOW INCLUDES: Notes functionality styles
+ * FIXED: Removed conflicting colors, proper header, standard folding support
  */
 
 /* === MODULE CONTAINER === */
@@ -14,13 +14,20 @@
     margin-bottom: var(--spacing-lg);
 }
 
-/* === MODULE HEADER === */
+/* === MODULE HEADER - FIXED === */
 
 .experiment-summary-header {
-    background: linear-gradient(135deg, var(--schlatter-blue), var(--schlatter-blue-dark));
+    /* FIXED: Use standard blue background like other modules, not gradient */
+    background-color: var(--schlatter-blue);
     color: var(--text-white);
     padding: var(--spacing-md);
     border-bottom: 1px solid var(--border-light);
+    transition: background-color var(--transition-fast);
+}
+
+/* FIXED: Standard hover effect like other modules */
+.experiment-summary-header:hover {
+    background-color: rgba(var(--schlatter-blue-rgb), 0.95);
 }
 
 .experiment-summary-title h3 {
@@ -52,10 +59,31 @@
     border-color: rgba(255, 255, 255, 0.5);
 }
 
-/* === MODULE CONTENT === */
+/* === FOLDING-SPECIFIC HEADER STYLES - ADDED === */
+.experiment-summary-header .fold-arrow {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: var(--text-white);
+}
+
+.experiment-summary-header .fold-arrow:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+    transform: scale(1.1);
+}
+
+/* === MODULE CONTENT - FIXED === */
 
 .experiment-summary-content {
     padding: var(--spacing-lg);
+    transition: all var(--transition-slow);
+    overflow: hidden;
+}
+
+/* ADDED: Generic folding support using .module-content class */
+.foldable-module.collapsed .module-content {
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
 }
 
 /* === LOADING AND ERROR STATES === */
@@ -63,6 +91,7 @@
 .loading-state {
     text-align: center;
     padding: var(--spacing-xl);
+    transition: all var(--transition-slow);
 }
 
 .loading-content {
@@ -87,6 +116,7 @@
 .error-state {
     text-align: center;
     padding: var(--spacing-xl);
+    transition: all var(--transition-slow);
 }
 
 .error-content {
@@ -96,6 +126,17 @@
 .error-content h4 {
     color: var(--status-error);
     margin-bottom: var(--spacing-md);
+}
+
+/* ADDED: Folding behavior for loading/error states */
+.foldable-module.collapsed .loading-state,
+.foldable-module.collapsed .error-state {
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    opacity: 0;
 }
 
 /* === OVERVIEW CARDS === */
@@ -167,7 +208,7 @@
 }
 
 .info-value.rail-id {
-    font-family: var(--font-mono);
+    font-family: var(--font-family-mono);
     font-size: var(--font-sm);
 }
 
@@ -472,35 +513,21 @@
     border: 1px solid var(--border-light);
 }
 
+/* REMOVED: Conflicting file indicator colors - will use browser module colors */
+/* 
+.file-indicator.bin { background-color: var(--status-success); }
+.file-indicator.csv { background-color: var(--schlatter-blue); }
+.file-indicator.image { background-color: var(--status-warning); }
+.file-indicator.video { background-color: var(--status-info); }
+.file-indicator.data { background-color: var(--text-secondary); }
+.file-indicator.missing { background-color: var(--border-light); }
+*/
+
 .file-indicator {
     width: 12px;
     height: 12px;
     border-radius: 50%;
     flex-shrink: 0;
-}
-
-.file-indicator.bin {
-    background-color: var(--status-success);
-}
-
-.file-indicator.csv {
-    background-color: var(--schlatter-blue);
-}
-
-.file-indicator.image {
-    background-color: var(--status-warning);
-}
-
-.file-indicator.video {
-    background-color: var(--status-info);
-}
-
-.file-indicator.data {
-    background-color: var(--text-secondary);
-}
-
-.file-indicator.missing {
-    background-color: var(--border-light);
 }
 
 .file-label {
@@ -714,6 +741,26 @@
     color: var(--status-warning);
 }
 
+/* === COLLAPSED STATE INDICATOR - ADDED === */
+.foldable-module.collapsed .experiment-summary-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, 
+        rgba(255, 255, 255, 0.3) 0%, 
+        rgba(255, 255, 255, 0.6) 50%, 
+        rgba(255, 255, 255, 0.3) 100%);
+}
+
+/* === PERFORMANCE OPTIMIZATION - ADDED === */
+.foldable-module.collapsed .experiment-summary-content * {
+    animation: none !important;
+    transition: none !important;
+}
+
 /* Print Optimization */
 @media print {
     .experiment-notes-section {
@@ -725,6 +772,29 @@
     }
     
     .notes-footer {
+        display: none !important;
+    }
+    
+    /* ADDED: Print support for folding */
+    .experiment-summary-container {
+        box-shadow: none;
+        border: 1px solid var(--border-color);
+    }
+    
+    .experiment-summary-header {
+        background-color: var(--bg-light) !important;
+        color: var(--text-primary) !important;
+        border-bottom: 2px solid var(--border-color);
+    }
+    
+    .foldable-module.collapsed .module-content {
+        min-height: auto !important;
+        max-height: none !important;
+        padding: var(--spacing-lg) !important;
+        overflow: visible !important;
+    }
+    
+    .fold-arrow {
         display: none !important;
     }
 }
