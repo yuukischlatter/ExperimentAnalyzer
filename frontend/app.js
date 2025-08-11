@@ -373,7 +373,7 @@ class ExperimentAnalyzer {
             'hasTensileCsv': 'tensile-strength',
             'hasPhotos': 'photo-gallery',
             //'hasThermalRavi': 'thermal-ir',
-            //'hasTcp5File': 'tcp5-oscilloscope',
+            'hasTcp5File': 'tcp5-oscilloscope',
             //'hasWeldJournal': 'weld-journal',
             'hasCrownMeasurements': 'crown-measurements',
             'hasAmbientTemperature': 'ambient-temperature',

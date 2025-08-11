@@ -1,0 +1,42 @@
+<!-- TCP5 Oscilloscope Module Template -->
+<div class="tcp5-oscilloscope-container">
+    
+    <!-- Module Header (standardized structure for folding) -->
+    <div class="tcp5-oscilloscope-header card-header">
+        <div class="flex items-center justify-between">
+            <div class="tcp5-oscilloscope-title">
+                <h3 class="card-title">TCP5 Oscilloscope Data</h3>
+                <p class="text-sm text-secondary" data-bind="experimentInfo">High-resolution measurement channels</p>
+            </div>
+            <!-- Fold arrow will be inserted here by folding script -->
+        </div>
+    </div>
+    
+    <!-- Module Content -->
+    <div class="tcp5-oscilloscope-content">
+        
+        <!-- Loading State -->
+        <div data-bind="loadingSpinner" class="loading-state hidden">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <p>Loading TCP5 oscilloscope data...</p>
+                <p class="text-sm text-secondary">Processing HDF5 file with progressive dataset selection</p>
+            </div>
+        </div>
+        
+        <!-- Error State -->
+        <div data-bind="errorMessage" class="error-state hidden">
+            <div class="error-content">
+                <h4>TCP5 Data Not Available</h4>
+                <p data-bind="errorText">No TCP5/HDF5 file found for this experiment.</p>
+            </div>
+        </div>
+        
+        <!-- Plot Container -->
+        <div data-bind="plotContainer" class="plot-container hidden">
+            <div data-bind="oscilloscopePlot" id="tcp5-oscilloscope-plot" class="oscilloscope-plot"></div>
+        </div>
+        
+    </div>
+    
+</div>
