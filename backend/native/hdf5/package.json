@@ -1,0 +1,78 @@
+{
+  "name": "@backend/hdf5-native",
+  "version": "1.0.0",
+  "description": "Native HDF5 reader for Schlatter Experiment Analyzer - High-performance welding data analysis",
+  "main": "build/Release/hdf5_native.node",
+  "scripts": {
+    "build": "node-gyp rebuild",
+    "build-debug": "node-gyp rebuild --debug",
+    "build-verbose": "node-gyp rebuild --verbose",
+    "clean": "node-gyp clean",
+    "configure": "node-gyp configure",
+    "test": "node test/test_native.js",
+    "install": "npm run build",
+    "rebuild": "npm run clean && npm run build"
+  },
+  "keywords": [
+    "hdf5",
+    "native-addon",
+    "time-series",
+    "welding",
+    "data-analysis",
+    "schlatter",
+    "industrial",
+    "cpp",
+    "highfive",
+    "performance"
+  ],
+  "author": "Schlatter Industries",
+  "license": "ISC",
+  "dependencies": {
+    "node-addon-api": "^8.5.0"
+  },
+  "devDependencies": {
+    "node-gyp": "^10.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "local"
+  },
+  "gypfile": true,
+  "binary": {
+    "module_name": "hdf5_native",
+    "module_path": "./build/Release/",
+    "host": "local"
+  },
+  "buildDependencies": {
+    "vcpkg": {
+      "packages": [
+        "hdf5[cpp]:x64-windows",
+        "zlib:x64-windows",
+        "libaec:x64-windows"
+      ],
+      "triplet": "x64-windows",
+      "baseline": "latest"
+    }
+  },
+  "config": {
+    "target_platform": "win32",
+    "target_arch": "x64",
+    "cache_min": "10.3.0",
+    "module_name": "hdf5_native",
+    "module_path": "./build/Release"
+  },
+  "files": [
+    "binding.gyp",
+    "src/",
+    "build/Release/*.node"
+  ]
+}

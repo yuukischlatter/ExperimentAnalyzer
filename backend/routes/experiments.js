@@ -15,10 +15,10 @@ const AccelerationCsvService = require('../services/AccelerationCsvService');
 const TensileCsvService = require('../services/TensileCsvService');
 const PhotoService = require('../services/PhotoService');
 const CrownService = require('../services/CrownService');
-const TPC5ParserService = require('../services/TPC5ParserService');
 const SummaryService = require('../services/SummaryService');
 const ExperimentNotesRepository = require('../repositories/ExperimentNotesRepository');
 const ExperimentNotes = require('../models/ExperimentNotes');
+const Hdf5ParserService = require('../services/Hdf5ParserService');
 const { responseMiddleware } = require('../models/ApiResponse');
 
 // Apply response middleware to all routes in this router
@@ -32,9 +32,9 @@ const accelerationService = new AccelerationCsvService();
 const tensileService = new TensileCsvService();
 const photoService = new PhotoService();
 const crownService = new CrownService();
-const tpc5Service = new TPC5ParserService();
 const summaryService = new SummaryService();
 const notesRepository = new ExperimentNotesRepository();
+const hdf5Service = new Hdf5ParserService();
 
 // #region EXISTING EXPERIMENT ROUTES
 
@@ -112,13 +112,6 @@ router.get('/status', async (req, res) => {
                 cacheTimeout: crownCacheStatus.cacheTimeoutMs
             };
             
-            // Add TPC5 service status
-            const tpc5CacheStatus = tpc5Service.getCacheStatus();
-            statusResult.status.tpc5ParserService = {
-                cachedExperiments: tpc5CacheStatus.totalCachedExperiments,
-                cacheTimeout: tpc5CacheStatus.cacheTimeoutMs
-            };
-
             // Add summary service status
             const summaryCacheStatus = summaryService.getCacheStatus();
             statusResult.status.summaryService = {
@@ -127,6 +120,14 @@ router.get('/status', async (req, res) => {
                 expiredEntries: summaryCacheStatus.expiredEntries,
                 cacheTimeout: summaryCacheStatus.cacheTimeoutMs,
                 hitRate: summaryCacheStatus.hitRate
+            };
+
+            // Add HDF5 service status
+            const hdf5CacheStatus = hdf5Service.getCacheStatus();
+            statusResult.status.hdf5ParserService = {
+                cachedExperiments: hdf5CacheStatus.totalCachedExperiments,
+                cacheTimeout: hdf5CacheStatus.cacheTimeoutMs,
+                nativeAddonAvailable: hdf5CacheStatus.capabilities?.nativeAddonSupport
             };
 
             res.success(statusResult.status);
@@ -190,7 +191,7 @@ router.post('/rescan', async (req, res) => {
                 tensileService.clearAllCache();
                 photoService.clearAllCache();
                 crownService.clearAllCache();
-                tpc5Service.clearAllCache();
+                hdf5Service.clearAllCache();
                 summaryService.clearAllCache();
             }
             
@@ -2809,353 +2810,6 @@ router.get('/:experimentId/crown-file-info', async (req, res) => {
 
 // #endregion
 
-// #region TPC5 DATA ROUTES
-
-/**
- * GET /api/experiments/:experimentId/tpc5-metadata
- * Get TPC5 file metadata and channel information
- */
-router.get('/:experimentId/tpc5-metadata', async (req, res) => {
-    try {
-        const { experimentId } = req.params;
-        const { forceRefresh = false } = req.query;
-        const forceRefreshBool = forceRefresh === 'true' || forceRefresh === true;
-
-        console.log(`Getting TPC5 metadata for experiment: ${experimentId}`);
-
-        // Check if experiment has TPC5 file
-        const hasTPC5 = await tpc5Service.hasTPC5File(experimentId);
-        if (!hasTPC5) {
-            return res.error(`No TPC5 file found for experiment ${experimentId}`, 404);
-        }
-
-        // Get comprehensive metadata
-        const metadataResult = await tpc5Service.getTPC5Metadata(experimentId);
-        
-        if (!metadataResult.success) {
-            return res.error(metadataResult.error, 500);
-        }
-
-        res.success({
-            experimentId: experimentId,
-            hasValidTPC5File: true,
-            ...metadataResult
-        });
-
-    } catch (error) {
-        console.error(`Error getting TPC5 metadata for ${req.params.experimentId}:`, error);
-        res.error(`Failed to get TPC5 metadata: ${error.message}`, 500);
-    }
-});
-
-/**
- * GET /api/experiments/:experimentId/tpc5-data/:channelId
- * Get single TPC5 channel data with resampling
- */
-router.get('/:experimentId/tpc5-data/:channelId', async (req, res) => {
-    try {
-        const { experimentId, channelId } = req.params;
-        const { 
-            start = 0, 
-            end = null, 
-            maxPoints = 2000 
-        } = req.query;
-
-        const startTime = parseFloat(start);
-        const endTime = end ? parseFloat(end) : null;
-        const maxPointsInt = parseInt(maxPoints);
-
-        // Validate parameters
-        if (isNaN(startTime) || startTime < 0) {
-            return res.error('Invalid start time parameter', 400);
-        }
-        
-        if (endTime !== null && (isNaN(endTime) || endTime <= startTime)) {
-            return res.error('Invalid end time parameter', 400);
-        }
-        
-        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
-            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
-        }
-
-        // Get channel data
-        const channelResult = await tpc5Service.getChannelData(experimentId, channelId, {
-            startTime: startTime,
-            endTime: endTime,
-            maxPoints: maxPointsInt
-        });
-
-        if (!channelResult.success) {
-            return res.error(channelResult.error, channelResult.error.includes('not found') ? 404 : 500);
-        }
-
-        res.success(channelResult);
-
-    } catch (error) {
-        console.error(`Error getting TPC5 channel data for ${req.params.experimentId}/${req.params.channelId}:`, error);
-        res.error(`Failed to get TPC5 channel data: ${error.message}`, 500);
-    }
-});
-
-/**
- * POST /api/experiments/:experimentId/tpc5-data/bulk
- * Get multiple TPC5 channels data efficiently
- */
-router.post('/:experimentId/tpc5-data/bulk', async (req, res) => {
-    try {
-        const { experimentId } = req.params;
-        const { 
-            channelIds, 
-            startTime = 0, 
-            endTime = null, 
-            maxPoints = 2000 
-        } = req.body;
-
-        // Validate request body
-        if (!Array.isArray(channelIds)) {
-            return res.error('channelIds must be an array', 400);
-        }
-
-        if (channelIds.length === 0) {
-            return res.error('channelIds cannot be empty', 400);
-        }
-
-        if (channelIds.length > 20) {
-            return res.error('Maximum 20 channels per request', 400);
-        }
-
-        const startTimeFloat = parseFloat(startTime);
-        const endTimeFloat = endTime ? parseFloat(endTime) : null;
-        const maxPointsInt = parseInt(maxPoints);
-
-        // Validate parameters
-        if (isNaN(startTimeFloat) || startTimeFloat < 0) {
-            return res.error('Invalid startTime parameter', 400);
-        }
-        
-        if (endTimeFloat !== null && (isNaN(endTimeFloat) || endTimeFloat <= startTimeFloat)) {
-            return res.error('Invalid endTime parameter', 400);
-        }
-        
-        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
-            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
-        }
-
-        console.log(`Bulk TPC5 channel request for ${experimentId}: ${channelIds.length} channels`);
-
-        // Get bulk channel data
-        const bulkResult = await tpc5Service.getBulkChannelData(experimentId, channelIds, {
-            startTime: startTimeFloat,
-            endTime: endTimeFloat,
-            maxPoints: maxPointsInt
-        });
-
-        if (!bulkResult.success) {
-            return res.error(bulkResult.error, 500);
-        }
-
-        res.success(bulkResult);
-
-    } catch (error) {
-        console.error(`Error getting bulk TPC5 channel data for ${req.params.experimentId}:`, error);
-        res.error(`Failed to get bulk TPC5 channel data: ${error.message}`, 500);
-    }
-});
-
-/**
- * GET /api/experiments/:experimentId/tpc5-stats/:channelId
- * Get TPC5 channel statistics
- */
-router.get('/:experimentId/tpc5-stats/:channelId', async (req, res) => {
-    try {
-        const { experimentId, channelId } = req.params;
-
-        console.log(`Getting TPC5 channel statistics for ${experimentId}/${channelId}`);
-
-        // Get channel statistics
-        const statsResult = await tpc5Service.getChannelStatistics(experimentId, channelId);
-
-        if (!statsResult.success) {
-            return res.error(statsResult.error, statsResult.error.includes('not found') ? 404 : 500);
-        }
-
-        res.success(statsResult);
-
-    } catch (error) {
-        console.error(`Error getting TPC5 channel statistics for ${req.params.experimentId}/${req.params.channelId}:`, error);
-        res.error(`Failed to get TPC5 channel statistics: ${error.message}`, 500);
-    }
-});
-
-/**
- * GET /api/experiments/:experimentId/tpc5-channels
- * Get available TPC5 channels information
- */
-router.get('/:experimentId/tpc5-channels', async (req, res) => {
-    try {
-        const { experimentId } = req.params;
-
-        console.log(`Getting available TPC5 channels for experiment: ${experimentId}`);
-
-        // Get metadata which includes channel information
-        const metadataResult = await tpc5Service.getTPC5Metadata(experimentId);
-        
-        if (!metadataResult.success) {
-            return res.error(metadataResult.error, 500);
-        }
-
-        // Extract channel information
-        const channelsInfo = {
-            experimentId: experimentId,
-            fileFormat: 'TPC5/HDF5',
-            available: metadataResult.channels.available,
-            byUnit: metadataResult.channels.byUnit,
-            defaults: metadataResult.channels.defaults,
-            ranges: metadataResult.channels.ranges,
-            timeRange: metadataResult.timeRange,
-            tpc5Info: metadataResult.tpc5Info,
-            summary: {
-                rawChannelCount: metadataResult.channels.available.raw.length,
-                calculatedChannelCount: metadataResult.channels.available.calculated.length,
-                totalChannels: metadataResult.channels.available.raw.length + 
-                              metadataResult.channels.available.calculated.length,
-                duration: metadataResult.duration,
-                samplingRate: metadataResult.samplingRate
-            }
-        };
-
-        res.success(channelsInfo);
-
-    } catch (error) {
-        console.error(`Error getting TPC5 channels info for ${req.params.experimentId}:`, error);
-        res.error(`Failed to get TPC5 channels information: ${error.message}`, 500);
-    }
-});
-
-/**
- * DELETE /api/experiments/:experimentId/tpc5-cache
- * Clear cached TPC5 data for experiment
- */
-router.delete('/:experimentId/tpc5-cache', async (req, res) => {
-    try {
-        const { experimentId } = req.params;
-
-        console.log(`Clearing TPC5 cache for experiment: ${experimentId}`);
-
-        tpc5Service.clearCache(experimentId);
-
-        res.success({
-            message: `TPC5 cache cleared for experiment ${experimentId}`,
-            experimentId: experimentId,
-            clearedAt: new Date().toISOString()
-        });
-
-    } catch (error) {
-        console.error(`Error clearing TPC5 cache for ${req.params.experimentId}:`, error);
-        res.error(`Failed to clear TPC5 cache: ${error.message}`, 500);
-    }
-});
-
-/**
- * GET /api/experiments/tpc5-service/status
- * Get TPC5 parser service status and cache information
- */
-router.get('/tpc5-service/status', async (req, res) => {
-    try {
-        const cacheStatus = tpc5Service.getCacheStatus();
-        
-        res.success({
-            serviceName: 'TPC5 Parser Service',
-            status: 'active',
-            cache: cacheStatus,
-            capabilities: {
-                supportedChannels: {
-                    raw: 'channel_0 to channel_5 (6 channels)',
-                    calculated: 'calc_0 to calc_6 (7 channels, calc_6 unavailable in TPC5)'
-                },
-                supportedFormats: ['TPC5/HDF5 format'],
-                maxFileSize: '5GB',
-                resamplingAlgorithm: 'MinMax-LTTB with spike preservation',
-                caching: 'In-memory with TTL',
-                downsamplingUsed: 'data@128 level (pre-computed)'
-            },
-            timestamp: new Date().toISOString()
-        });
-
-    } catch (error) {
-        console.error('Error getting TPC5 service status:', error);
-        res.error(`Failed to get TPC5 service status: ${error.message}`, 500);
-    }
-});
-
-/**
- * POST /api/experiments/tpc5-service/clear-all-cache
- * Clear all cached TPC5 data
- */
-router.post('/tpc5-service/clear-all-cache', async (req, res) => {
-    try {
-        console.log('Clearing all TPC5 parser cache...');
-
-        tpc5Service.clearAllCache();
-
-        res.success({
-            message: 'All TPC5 parser cache cleared successfully',
-            clearedAt: new Date().toISOString()
-        });
-
-    } catch (error) {
-        console.error('Error clearing all TPC5 cache:', error);
-        res.error(`Failed to clear all TPC5 cache: ${error.message}`, 500);
-    }
-});
-
-/**
- * GET /api/experiments/:experimentId/tpc5-file-info
- * Get TPC5 file information without parsing (quick check)
- */
-router.get('/:experimentId/tpc5-file-info', async (req, res) => {
-    try {
-        const { experimentId } = req.params;
-
-        // Get file path
-        const filePath = tpc5Service.getExperimentTPC5FilePath(experimentId);
-        const hasFile = await tpc5Service.hasTPC5File(experimentId);
-
-        if (!hasFile) {
-            return res.success({
-                experimentId: experimentId,
-                hasFile: false,
-                expectedPath: filePath,
-                fileFormat: 'TPC5/HDF5',
-                message: 'TPC5 file not found'
-            });
-        }
-
-        // Get basic file information
-        const fs = require('fs').promises;
-        const path = require('path');
-        const stats = await fs.stat(filePath);
-
-        res.success({
-            experimentId: experimentId,
-            hasFile: true,
-            filePath: filePath,
-            fileName: path.basename(filePath),
-            fileFormat: 'TPC5/HDF5',
-            fileSize: stats.size,
-            fileSizeMB: (stats.size / 1024 / 1024).toFixed(1),
-            lastModified: stats.mtime,
-            created: stats.birthtime
-        });
-
-    } catch (error) {
-        console.error(`Error getting TPC5 file info for ${req.params.experimentId}:`, error);
-        res.error(`Failed to get TPC5 file information: ${error.message}`, 500);
-    }
-});
-
-// #endregion
-
 // #region EXPERIMENT SUMMARY AND NOTES ROUTES
 
 /**
@@ -3487,6 +3141,318 @@ router.post('/summaries/clear-cache', async (req, res) => {
     } catch (error) {
         console.error('Error clearing summary cache:', error);
         res.error(`Failed to clear summary cache: ${error.message}`, 500);
+    }
+});
+
+// #endregion
+
+// #region HDF5 DATA ROUTES
+
+/**
+ * GET /api/experiments/:experimentId/hdf5-metadata
+ * Get HDF5 file metadata and channel information
+ */
+router.get('/:experimentId/hdf5-metadata', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { forceRefresh = false } = req.query;
+        const forceRefreshBool = forceRefresh === 'true' || forceRefresh === true;
+
+        console.log(`Getting HDF5 metadata for experiment: ${experimentId}`);
+
+        // Check if experiment has HDF5 file
+        const hasHdf5 = await hdf5Service.hasHdf5File(experimentId);
+        if (!hasHdf5.exists) {
+            return res.error(`No HDF5 file found for experiment ${experimentId}`, 404);
+        }
+
+        // Get comprehensive metadata
+        const metadataResult = await hdf5Service.getHdf5Metadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        res.success({
+            experimentId: experimentId,
+            hasValidHdf5File: true,
+            ...metadataResult
+        });
+
+    } catch (error) {
+        console.error(`Error getting HDF5 metadata for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get HDF5 metadata: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/hdf5-data/:channelId
+ * Get single HDF5 channel data with resampling
+ */
+router.get('/:experimentId/hdf5-data/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+        const { 
+            start = 0, 
+            end = null, 
+            maxPoints = 2000 
+        } = req.query;
+
+        const startTime = parseFloat(start);
+        const endTime = end ? parseFloat(end) : null;
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters
+        if (isNaN(startTime) || startTime < 0) {
+            return res.error('Invalid start time parameter', 400);
+        }
+        
+        if (endTime !== null && (isNaN(endTime) || endTime <= startTime)) {
+            return res.error('Invalid end time parameter', 400);
+        }
+        
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
+            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
+        }
+
+        // Get channel data
+        const channelResult = await hdf5Service.getChannelData(experimentId, channelId, {
+            startTime: startTime,
+            endTime: endTime,
+            maxPoints: maxPointsInt
+        });
+
+        if (!channelResult.success) {
+            return res.error(channelResult.error, channelResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(channelResult);
+
+    } catch (error) {
+        console.error(`Error getting HDF5 channel data for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get HDF5 channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/:experimentId/hdf5-data/bulk
+ * Get multiple HDF5 channels data efficiently
+ */
+router.post('/:experimentId/hdf5-data/bulk', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { 
+            channelIds, 
+            startTime = 0, 
+            endTime = null, 
+            maxPoints = 2000 
+        } = req.body;
+
+        // Validate request body
+        if (!Array.isArray(channelIds)) {
+            return res.error('channelIds must be an array', 400);
+        }
+
+        if (channelIds.length === 0) {
+            return res.error('channelIds cannot be empty', 400);
+        }
+
+        if (channelIds.length > 20) {
+            return res.error('Maximum 20 channels per request', 400);
+        }
+
+        const startTimeFloat = parseFloat(startTime);
+        const endTimeFloat = endTime ? parseFloat(endTime) : null;
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters
+        if (isNaN(startTimeFloat) || startTimeFloat < 0) {
+            return res.error('Invalid startTime parameter', 400);
+        }
+        
+        if (endTimeFloat !== null && (isNaN(endTimeFloat) || endTimeFloat <= startTimeFloat)) {
+            return res.error('Invalid endTime parameter', 400);
+        }
+        
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
+            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
+        }
+
+        console.log(`Bulk HDF5 channel request for ${experimentId}: ${channelIds.length} channels`);
+
+        // Get bulk channel data
+        const bulkResult = await hdf5Service.getBulkChannelData(experimentId, channelIds, {
+            startTime: startTimeFloat,
+            endTime: endTimeFloat,
+            maxPoints: maxPointsInt
+        });
+
+        if (!bulkResult.success) {
+            return res.error(bulkResult.error, 500);
+        }
+
+        res.success(bulkResult);
+
+    } catch (error) {
+        console.error(`Error getting bulk HDF5 channel data for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get bulk HDF5 channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/hdf5-stats/:channelId
+ * Get HDF5 channel statistics
+ */
+router.get('/:experimentId/hdf5-stats/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+
+        console.log(`Getting HDF5 channel statistics for ${experimentId}/${channelId}`);
+
+        // Get channel statistics
+        const statsResult = await hdf5Service.getChannelStatistics(experimentId, channelId);
+
+        if (!statsResult.success) {
+            return res.error(statsResult.error, statsResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(statsResult);
+
+    } catch (error) {
+        console.error(`Error getting HDF5 channel statistics for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get HDF5 channel statistics: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/hdf5-channels
+ * Get available HDF5 channels information
+ */
+router.get('/:experimentId/hdf5-channels', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Getting available HDF5 channels for experiment: ${experimentId}`);
+
+        // Get available channels
+        const channelsResult = await hdf5Service.getAvailableChannels(experimentId);
+        
+        if (!channelsResult.success) {
+            return res.error(channelsResult.error, 500);
+        }
+
+        res.success(channelsResult);
+
+    } catch (error) {
+        console.error(`Error getting HDF5 channels info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get HDF5 channels information: ${error.message}`, 500);
+    }
+});
+
+/**
+ * DELETE /api/experiments/:experimentId/hdf5-cache
+ * Clear cached HDF5 data for experiment
+ */
+router.delete('/:experimentId/hdf5-cache', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Clearing HDF5 cache for experiment: ${experimentId}`);
+
+        hdf5Service.clearCache(experimentId);
+
+        res.success({
+            message: `HDF5 cache cleared for experiment ${experimentId}`,
+            experimentId: experimentId,
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error clearing HDF5 cache for ${req.params.experimentId}:`, error);
+        res.error(`Failed to clear HDF5 cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/hdf5-service/status
+ * Get HDF5 parser service status and cache information
+ */
+router.get('/hdf5-service/status', async (req, res) => {
+    try {
+        const serviceStatus = hdf5Service.getServiceStatus();
+        
+        res.success({
+            ...serviceStatus,
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error getting HDF5 service status:', error);
+        res.error(`Failed to get HDF5 service status: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/hdf5-service/clear-all-cache
+ * Clear all cached HDF5 data
+ */
+router.post('/hdf5-service/clear-all-cache', async (req, res) => {
+    try {
+        console.log('Clearing all HDF5 parser cache...');
+
+        hdf5Service.clearAllCache();
+
+        res.success({
+            message: 'All HDF5 parser cache cleared successfully',
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error clearing all HDF5 cache:', error);
+        res.error(`Failed to clear all HDF5 cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/hdf5-file-info
+ * Get HDF5 file information without parsing (quick check)
+ */
+router.get('/:experimentId/hdf5-file-info', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        // Check if HDF5 file exists
+        const hasHdf5Result = await hdf5Service.hasHdf5File(experimentId);
+
+        if (!hasHdf5Result.exists) {
+            return res.success({
+                experimentId: experimentId,
+                hasFile: false,
+                searchedPaths: hasHdf5Result.searchedPaths,
+                message: 'HDF5 file not found'
+            });
+        }
+
+        // Get basic file information
+        const fs = require('fs').promises;
+        const path = require('path');
+        const stats = await fs.stat(hasHdf5Result.filePath);
+
+        res.success({
+            experimentId: experimentId,
+            hasFile: true,
+            filePath: hasHdf5Result.filePath,
+            fileName: path.basename(hasHdf5Result.filePath),
+            fileExtension: hasHdf5Result.fileExtension,
+            fileSize: stats.size,
+            fileSizeMB: (stats.size / 1024 / 1024).toFixed(1),
+            lastModified: stats.mtime,
+            created: stats.birthtime
+        });
+
+    } catch (error) {
+        console.error(`Error getting HDF5 file info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get HDF5 file information: ${error.message}`, 500);
     }
 });
 

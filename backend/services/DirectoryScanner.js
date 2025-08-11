@@ -177,7 +177,7 @@ class DirectoryScanner {
             createdAt: new Date(),
             updatedAt: new Date(),
             
-            // File detection logic (same as C# version)
+            // File detection logic
             hasBinFile: this.hasFileType(fileNames, `${experimentId.toLowerCase()}.bin`),
             hasAccelerationCsv: this.hasFileType(fileNames, `${experimentId.toLowerCase()}_beschleuinigung.csv`),
             hasPositionCsv: this.hasFilePattern(fileNames, /^snapshot_optoNCDT-.*\.csv$/i),
