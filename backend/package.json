@@ -45,18 +45,19 @@
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
+    "ffmpeg-static": "^5.1.0",
+    "fluent-ffmpeg": "^2.1.2",
     "h5wasm": "^0.8.3",
+    "node-addon-api": "^8.5.0",
     "papaparse": "^5.4.1",
     "sqlite3": "^5.1.6",
-    "xlsx": "^0.18.5",
-    "node-addon-api": "^8.5.0",
+    "uuid": "^11.1.0",
     "ws": "^8.14.0",
-    "fluent-ffmpeg": "^2.1.2",
-    "ffmpeg-static": "^5.1.0"
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
-    "nodemon": "^3.0.1",
-    "node-gyp": "^10.3.1"
+    "node-gyp": "^10.3.1",
+    "nodemon": "^3.0.1"
   },
   "engines": {
     "node": ">=18.0.0"
@@ -105,7 +106,11 @@
         "buildTools": "Visual Studio Build Tools"
       },
       "linux": {
-        "packages": ["libhdf5-dev", "libopencv-dev", "build-essential"]
+        "packages": [
+          "libhdf5-dev",
+          "libopencv-dev",
+          "build-essential"
+        ]
       }
     }
   }

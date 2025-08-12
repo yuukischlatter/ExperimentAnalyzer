@@ -1,7 +1,7 @@
 /**
  * Experiment Analyzer - Main Application Controller
  * Manages module loading, global state, and inter-module communication
- * UPDATED: Added experiment summary integration
+ * UPDATED: Added thermal-ir module integration
  */
 
 class ExperimentAnalyzer {
@@ -200,7 +200,7 @@ class ExperimentAnalyzer {
             return `/modules/core/${moduleName}`;
         }
         
-        // Data visualization modules
+        // Data visualization modules - UPDATED: Added thermal-ir
         if (['bin-oscilloscope', 'acceleration', 'distance-sensor', 'tensile-strength', 
              'photo-gallery', 'thermal-ir', 'tcp5-oscilloscope', 'weld-journal',
              'crown-measurements', 'ambient-temperature'].includes(moduleName)) {
@@ -326,7 +326,7 @@ class ExperimentAnalyzer {
     }
     
     /**
-     * NEW: Load and initialize experiment summary module
+     * Load and initialize experiment summary module
      */
     async loadExperimentSummary(experimentId) {
         try {
@@ -365,6 +365,7 @@ class ExperimentAnalyzer {
     
     /**
      * Load data modules based on experiment file availability
+     * UPDATED: Added thermal-ir module mapping
      */
     async loadDataModulesForExperiment(experiment) {
         const moduleMap = {
@@ -372,9 +373,9 @@ class ExperimentAnalyzer {
             'hasPositionCsv': 'distance-sensor',
             'hasTensileCsv': 'tensile-strength',
             'hasPhotos': 'photo-gallery',
-            //'hasThermalRavi': 'thermal-ir',
+            'hasThermalRavi': 'thermal-ir',  
             'hasTcp5File': 'tcp5-oscilloscope',
-            //'hasWeldJournal': 'weld-journal',
+            'hasWeldJournal': 'weld-journal',
             'hasCrownMeasurements': 'crown-measurements',
             'hasAmbientTemperature': 'ambient-temperature',
             'hasBinFile': 'bin-oscilloscope'

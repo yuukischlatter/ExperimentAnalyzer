@@ -1,0 +1,618 @@
+/* ===================================================================== */
+/* THERMAL-IR.CSS - Interactive Thermal Video Analysis with Folding Support */
+/* ===================================================================== */
+
+/**
+ * Thermal IR Module - Styling
+ * Interactive thermal video analysis with real-time WebSocket integration
+ * Layout: Video + vertical chart (top), status (middle), horizontal chart (bottom)
+ * Colors: Fire theme with Schlatter blue accents
+ * UPDATED: Uses generic .module-content for folding compatibility
+ */
+
+/* === MODULE CONTAINER === */
+.thermal-ir-container {
+    background-color: var(--bg-white);
+    border-radius: var(--border-radius);
+    box-shadow: var(--shadow-md);
+    overflow: hidden;
+}
+
+/* === HEADER SECTION === */
+.thermal-ir-header {
+    background-color: var(--schlatter-blue);
+    color: var(--text-white);
+    padding: var(--spacing-md) var(--spacing-lg);
+    border-bottom: none;
+    transition: background-color var(--transition-fast);
+}
+
+.thermal-ir-header:hover {
+    background-color: rgba(var(--schlatter-blue-rgb), 0.95);
+}
+
+.thermal-ir-header .card-title {
+    color: var(--text-white);
+    font-size: var(--font-xl);
+    font-weight: var(--font-semibold);
+    margin: 0;
+}
+
+.thermal-ir-header p {
+    color: rgba(255, 255, 255, 0.9);
+    margin: var(--spacing-xs) 0 0 0;
+    font-size: var(--font-sm);
+}
+
+/* === FOLDING-SPECIFIC HEADER STYLES === */
+.thermal-ir-header .fold-arrow {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: var(--text-white);
+}
+
+.thermal-ir-header .fold-arrow:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+    transform: scale(1.1);
+}
+
+/* === CONTENT SECTION (FOLDING COMPATIBLE) === */
+.thermal-ir-content {
+    position: relative;
+    background-color: var(--bg-white);
+    transition: all var(--transition-slow);
+    overflow: hidden;
+}
+
+/* Updated to use generic .module-content selector for folding */
+.foldable-module.collapsed .module-content {
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+/* === MAIN LAYOUT GRID === */
+.thermal-sections-container {
+    display: grid;
+    grid-template-areas: 
+        "video vertical-chart"
+        "status status"
+        "horizontal horizontal";
+    grid-template-columns: 1fr 350px;
+    grid-template-rows: auto auto 280px;
+    gap: var(--spacing-lg);
+    padding: var(--spacing-lg);
+    background-color: var(--bg-white);
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .thermal-sections-container {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+}
+
+/* === VIDEO SECTION === */
+.thermal-video-section {
+    grid-area: video;
+    background-color: var(--bg-white);
+    border: 1px solid var(--border-light);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .thermal-video-section {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
+}
+
+/* === VIDEO CONTAINER === */
+.video-container-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-md);
+}
+
+.video-container {
+    position: relative;
+    background: #000000;
+    border-radius: var(--border-radius-sm);
+    overflow: hidden;
+    aspect-ratio: 908 / 1200; /* Thermal video aspect ratio */
+    width: 100%;
+    max-height: 60vh;
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .video-container {
+    height: 0 !important;
+    min-height: 0 !important;
+    aspect-ratio: unset !important;
+    overflow: hidden !important;
+}
+
+#thermal-video {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: contain;
+    background: #000000;
+    transition: opacity var(--transition-normal);
+}
+
+.foldable-module.collapsed #thermal-video {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* === CANVAS OVERLAY === */
+#line-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    cursor: crosshair;
+    z-index: 10;
+    transition: opacity var(--transition-normal);
+}
+
+.foldable-module.collapsed #line-overlay {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+/* Canvas cursor states */
+#line-overlay.grab-cursor { cursor: grab; }
+#line-overlay.grabbing-cursor { cursor: grabbing; }
+
+/* === VIDEO CONTROLS === */
+.video-controls {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-md);
+    padding: var(--spacing-sm) 0;
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .video-controls {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+}
+
+#play-btn {
+    min-width: 80px;
+    background-color: var(--schlatter-blue);
+    border-color: var(--schlatter-blue);
+}
+
+#play-btn:hover:not(:disabled) {
+    background-color: #002A66;
+    border-color: #002A66;
+}
+
+#play-btn:disabled {
+    background-color: var(--border-color);
+    border-color: var(--border-color);
+    cursor: not-allowed;
+}
+
+/* === FRAME SLIDER === */
+.frame-slider {
+    flex: 1;
+    height: 6px;
+    background: var(--border-light);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+    appearance: none;
+}
+
+.frame-slider::-webkit-slider-thumb {
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--schlatter-blue);
+    border-radius: 50%;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.frame-slider::-webkit-slider-thumb:hover {
+    background: #002A66;
+    transform: scale(1.1);
+}
+
+.frame-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--schlatter-blue);
+    border-radius: 50%;
+    cursor: pointer;
+    border: none;
+    transition: all var(--transition-fast);
+}
+
+.frame-slider:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.frame-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+    min-width: 120px;
+}
+
+#frame-info {
+    font-family: var(--font-family-mono);
+    font-size: var(--font-sm);
+    color: var(--text-primary);
+    font-weight: var(--font-medium);
+}
+
+.video-metadata {
+    color: var(--text-muted);
+    font-size: var(--font-xs);
+}
+
+/* === CHART SECTIONS === */
+.vertical-chart-section {
+    grid-area: vertical-chart;
+    background-color: var(--bg-white);
+    border: 1px solid var(--border-light);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    transition: all var(--transition-slow);
+}
+
+.horizontal-chart-section {
+    grid-area: horizontal;
+    background-color: var(--bg-white);
+    border: 1px solid var(--border-light);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .vertical-chart-section,
+.foldable-module.collapsed .horizontal-chart-section {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
+}
+
+/* === CHART HEADERS === */
+.chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--spacing-md);
+    padding-bottom: var(--spacing-xs);
+    border-bottom: 2px solid rgba(var(--schlatter-blue-rgb), 0.1);
+}
+
+.section-title {
+    color: var(--schlatter-blue);
+    font-size: var(--font-lg);
+    font-weight: var(--font-semibold);
+    margin: 0;
+}
+
+.line-indicator-group {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.line-indicator {
+    font-size: var(--font-sm);
+    font-weight: var(--font-medium);
+    color: var(--text-secondary);
+    padding: 2px 6px;
+    background-color: var(--bg-section);
+    border-radius: var(--border-radius-sm);
+}
+
+.line-color-box {
+    width: 16px;
+    height: 16px;
+    border-radius: var(--border-radius-sm);
+    border: 1px solid var(--border-light);
+}
+
+.line-1-color {
+    background-color: #2563eb; /* Blue for horizontal line */
+}
+
+.line-2-color {
+    background-color: #059669; /* Green for vertical line */
+}
+
+/* === THERMAL PLOTS === */
+.thermal-plot {
+    width: 100%;
+    height: 250px;
+    border-radius: var(--border-radius-sm);
+    background-color: var(--bg-white);
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .thermal-plot {
+    opacity: 0 !important;
+    pointer-events: none !important;
+    height: 0 !important;
+    min-height: 0 !important;
+}
+
+.vertical-plot {
+    height: 300px; /* Taller for vertical chart */
+}
+
+.horizontal-plot {
+    height: 220px; /* Standard height for horizontal chart */
+}
+
+.chart-info {
+    margin-top: var(--spacing-xs);
+    text-align: center;
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .chart-info {
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+}
+
+/* === CONNECTION STATUS SECTION === */
+.connection-status-section {
+    grid-area: status;
+    background-color: var(--bg-section);
+    border: 1px solid var(--border-light);
+    border-radius: var(--border-radius);
+    padding: var(--spacing-md);
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .connection-status-section {
+    height: 0 !important;
+    min-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border: none !important;
+    overflow: hidden !important;
+}
+
+.status-indicators {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.status-group {
+    display: flex;
+    gap: var(--spacing-lg);
+}
+
+/* === STATUS INDICATORS === */
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    transition: background-color var(--transition-fast);
+}
+
+/* Status dot colors */
+.status-indicator[data-status="connected"] .status-dot,
+.status-indicator[data-status="ready"] .status-dot,
+.status-indicator[data-status="loaded"] .status-dot {
+    background-color: var(--status-success);
+}
+
+.status-indicator[data-status="disconnected"] .status-dot,
+.status-indicator[data-status="not-ready"] .status-dot,
+.status-indicator[data-status="not-loaded"] .status-dot,
+.status-indicator[data-status="error"] .status-dot {
+    background-color: var(--status-error);
+}
+
+.status-indicator[data-status="connecting"] .status-dot,
+.status-indicator[data-status="loading"] .status-dot {
+    background-color: var(--status-warning);
+    animation: pulse 2s infinite;
+}
+
+.status-label {
+    font-size: var(--font-sm);
+    font-weight: var(--font-medium);
+    color: var(--text-secondary);
+    min-width: 80px;
+}
+
+.status-text {
+    font-size: var(--font-sm);
+    color: var(--text-primary);
+}
+
+/* Status pulse animation */
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.analysis-info {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 2px;
+}
+
+/* === STATE SECTIONS === */
+.loading-state,
+.error-state {
+    padding: var(--spacing-xxl);
+    text-align: center;
+    background-color: var(--bg-section);
+    min-height: 600px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-slow);
+}
+
+.foldable-module.collapsed .loading-state,
+.foldable-module.collapsed .error-state {
+    min-height: 0 !important;
+    max-height: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+    opacity: 0;
+}
+
+.loading-content,
+.error-content {
+    max-width: 400px;
+    margin: 0 auto;
+}
+
+.loading-content p,
+.error-content p {
+    color: var(--text-secondary);
+    margin-bottom: var(--spacing-md);
+    line-height: var(--line-height-relaxed);
+}
+
+.error-content h4 {
+    color: var(--status-error);
+    margin-bottom: var(--spacing-md);
+    font-size: var(--font-lg);
+}
+
+/* === PLOTLY CUSTOMIZATIONS === */
+.thermal-plot .plotly-graph-div {
+    width: 100% !important;
+    height: 100% !important;
+    transition: opacity var(--transition-normal);
+}
+
+.foldable-module.collapsed .thermal-plot .plotly-graph-div {
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.thermal-plot .modebar {
+    right: 10px !important;
+    top: 10px !important;
+}
+
+.thermal-plot .modebar-btn path {
+    fill: var(--schlatter-blue) !important;
+}
+
+.thermal-plot .modebar-btn:hover path {
+    fill: #002A66 !important;
+}
+
+/* === THERMAL THEME COLORS === */
+:root {
+    --thermal-line1: #2563eb;        /* Blue for horizontal line */
+    --thermal-line2: #059669;        /* Green for vertical line */
+    --thermal-grid: rgba(0, 50, 120, 0.1);
+    --thermal-background: rgba(255, 87, 34, 0.02);
+    --thermal-accent: #FF5722;       /* Orange accent for temperature highlights */
+}
+
+/* === COLLAPSED STATE INDICATOR === */
+.foldable-module.collapsed .thermal-ir-header::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, 
+        rgba(255, 255, 255, 0.3) 0%, 
+        rgba(255, 255, 255, 0.6) 50%, 
+        rgba(255, 255, 255, 0.3) 100%);
+}
+
+/* Desktop-only application - no responsive breakpoints needed */
+
+/* === PRINT STYLES === */
+@media print {
+    .thermal-ir-container {
+        box-shadow: none;
+        border: 1px solid var(--border-color);
+        page-break-inside: avoid;
+    }
+    
+    .thermal-ir-header {
+        background-color: var(--bg-light) !important;
+        color: var(--text-primary) !important;
+        border-bottom: 2px solid var(--border-color);
+    }
+    
+    .thermal-plot .modebar {
+        display: none !important;
+    }
+    
+    /* Print: expand all content regardless of fold state */
+    .foldable-module.collapsed .module-content {
+        min-height: 600px !important;
+        max-height: none !important;
+        padding: var(--spacing-lg) !important;
+        overflow: visible !important;
+    }
+    
+    .foldable-module.collapsed .thermal-sections-container {
+        height: auto !important;
+        min-height: auto !important;
+        padding: var(--spacing-lg) !important;
+        overflow: visible !important;
+    }
+    
+    .foldable-module.collapsed .thermal-plot {
+        opacity: 1 !important;
+        pointer-events: all !important;
+        height: 200px !important;
+        min-height: 200px !important;
+    }
+    
+    .fold-arrow {
+        display: none !important;
+    }
+    
+    /* Hide video controls in print */
+    .video-controls {
+        display: none !important;
+    }
+    
+    /* Simplify colors for print */
+    :root {
+        --thermal-line1: #000000 !important;
+        --thermal-line2: #666666 !important;
+    }
+}

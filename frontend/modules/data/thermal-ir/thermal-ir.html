@@ -1,0 +1,143 @@
+<!-- Thermal IR Module Template - Interactive Thermal Video Analysis -->
+<div class="thermal-ir-container">
+    
+    <!-- Module Header (standardized structure for folding) -->
+    <div class="thermal-ir-header card-header">
+        <div class="flex items-center justify-between">
+            <div class="thermal-ir-title">
+                <h3 class="card-title">Thermal IR Analysis</h3>
+                <p class="text-sm text-secondary" data-bind="experimentInfo">Interactive thermal video analysis with line temperature profiling</p>
+            </div>
+            <!-- Fold arrow will be inserted here by folding script -->
+        </div>
+    </div>
+    
+    <!-- Module Content -->
+    <div class="thermal-ir-content">
+        
+        <!-- Loading State -->
+        <div data-bind="loadingSpinner" class="loading-state hidden">
+            <div class="loading-content">
+                <div class="loading-spinner"></div>
+                <p>Loading thermal video...</p>
+                <p class="text-sm text-secondary">Connecting to thermal analysis engine and loading video files</p>
+            </div>
+        </div>
+        
+        <!-- Error State -->
+        <div data-bind="errorMessage" class="error-state hidden">
+            <div class="error-content">
+                <h4>Thermal Video Not Available</h4>
+                <p data-bind="errorText">No thermal video files found for this experiment.</p>
+                <p class="text-xs text-muted">Expected files: Thermal_*.avi and temperature mapping CSV</p>
+            </div>
+        </div>
+        
+        <!-- Main Content Container -->
+        <div data-bind="sectionsContainer" class="thermal-sections-container hidden">
+            
+            <!-- Video Section (Top-Left) -->
+            <div class="thermal-video-section">
+                <div class="video-container-wrapper">
+                    
+                    <!-- Video Container with Canvas Overlay -->
+                    <div class="video-container">
+                        <video data-bind="thermalVideo" id="thermal-video" preload="metadata" muted>
+                            <p>Your browser doesn't support video playback.</p>
+                        </video>
+                        <canvas data-bind="lineOverlay" id="line-overlay"></canvas>
+                    </div>
+                    
+                    <!-- Video Controls -->
+                    <div class="video-controls">
+                        <button data-bind="playButton" id="play-btn" class="btn btn-primary" disabled>
+                            <span data-bind="playButtonText">Play</span>
+                        </button>
+                        
+                        <input data-bind="frameSlider" id="frame-slider" type="range" 
+                               min="0" max="100" value="0" class="frame-slider" disabled>
+                        
+                        <div class="frame-info">
+                            <span data-bind="frameInfo" id="frame-info">Frame: 0 / 0</span>
+                            <span data-bind="videoInfo" class="video-metadata text-xs text-muted">
+                                Loading video info...
+                            </span>
+                        </div>
+                    </div>
+                    
+                </div>
+            </div>
+            
+            <!-- Vertical Chart Section (Top-Right) -->
+            <div class="vertical-chart-section">
+                <div class="chart-header">
+                    <h4 class="section-title">Vertical Line Temperature</h4>
+                    <div class="line-indicator-group">
+                        <span class="line-indicator vertical-line">Line 2</span>
+                        <span class="line-color-box line-2-color"></span>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <div data-bind="verticalTemperaturePlot" id="vertical-temperature-plot" class="thermal-plot vertical-plot"></div>
+                </div>
+                <div class="chart-info">
+                    <p class="text-xs text-muted">Temperature vs. Position (% from top)</p>
+                </div>
+            </div>
+            
+            <!-- Connection Status Section (Middle) -->
+            <div class="connection-status-section">
+                <div class="status-indicators">
+                    <div class="status-group">
+                        <div class="status-indicator" data-bind="webSocketStatus" data-status="disconnected">
+                            <span class="status-dot"></span>
+                            <span class="status-label">WebSocket</span>
+                            <span class="status-text">Disconnected</span>
+                        </div>
+                        
+                        <div class="status-indicator" data-bind="engineStatus" data-status="not-ready">
+                            <span class="status-dot"></span>
+                            <span class="status-label">Thermal Engine</span>
+                            <span class="status-text">Not Ready</span>
+                        </div>
+                        
+                        <div class="status-indicator" data-bind="videoStatus" data-status="not-loaded">
+                            <span class="status-dot"></span>
+                            <span class="status-label">Video</span>
+                            <span class="status-text">Not Loaded</span>
+                        </div>
+                    </div>
+                    
+                    <div class="analysis-info">
+                        <span data-bind="analysisInfo" class="text-xs text-muted">
+                            Draw lines on video to analyze temperature
+                        </span>
+                        <span data-bind="lastAnalysis" class="text-xs text-secondary">
+                            <!-- Last analysis time info -->
+                        </span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Horizontal Chart Section (Bottom) -->
+            <div class="horizontal-chart-section">
+                <div class="chart-header">
+                    <h4 class="section-title">Horizontal Line Temperature</h4>
+                    <div class="line-indicator-group">
+                        <span class="line-indicator horizontal-line">Line 1</span>
+                        <span class="line-color-box line-1-color"></span>
+                    </div>
+                </div>
+                <div class="chart-container">
+                    <div data-bind="horizontalTemperaturePlot" id="horizontal-temperature-plot" class="thermal-plot horizontal-plot"></div>
+                </div>
+                <div class="chart-info">
+                    <p class="text-xs text-muted">Position (% from left) vs. Temperature</p>
+                </div>
+            </div>
+            
+        </div>
+        
+    </div>
+    
+</div>

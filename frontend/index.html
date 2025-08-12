@@ -48,7 +48,7 @@
                     <!-- Experiment browser module will be loaded here -->
                 </section>
 
-                <!-- NEW: Module Container: Experiment Summary (ADDED AFTER BROWSER) -->
+                <!-- Module Container: Experiment Summary -->
                 <section id="experiment-summary-container" class="module-container foldable-module hidden">
                     <!-- experiment-summary module loads here -->
                 </section>
@@ -221,10 +221,10 @@
     margin-bottom: var(--spacing-xl);
 }
 
-/* UPDATED: Changed to single column layout for vertical stacking */
+/* Single column layout for vertical stacking */
 .data-modules-grid {
     display: grid;
-    grid-template-columns: 1fr; /* Single column instead of auto-fit minmax */
+    grid-template-columns: 1fr;
     gap: var(--spacing-lg);
     margin-top: var(--spacing-lg);
 }
@@ -241,7 +241,7 @@
     background-color: var(--bg-white);
     border-radius: var(--border-radius);
     box-shadow: var(--shadow-sm);
-    width: 100%; /* Ensure full width */
+    width: 100%;
 }
 
 .app-footer {
@@ -291,10 +291,10 @@
     margin-bottom: var(--spacing-md);
 }
 
-/* Responsive adjustments for larger screens */
+/* Larger gaps on bigger screens */
 @media (min-width: 1400px) {
     .data-modules-grid {
-        gap: var(--spacing-xl); /* Larger gaps on bigger screens */
+        gap: var(--spacing-xl);
     }
 }
 
@@ -356,7 +356,7 @@
 
 /* Module content transitions */
 .module-content {
-    max-height: none; /* Large enough for content */
+    max-height: none;
     overflow: hidden;
     transition: all var(--transition-slow);
 }
@@ -378,7 +378,7 @@
 /* Print optimization */
 @media print {
     .data-modules-grid {
-        display: block; /* Stack everything for print */
+        display: block;
     }
     
     .data-module-slot {
@@ -555,7 +555,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
     
-    // NEW: Also observe experiment summary container
+    // Also observe experiment summary container
     const expSummaryContainer = document.getElementById('experiment-summary-container');
     if (expSummaryContainer) {
         observer.observe(expSummaryContainer, {

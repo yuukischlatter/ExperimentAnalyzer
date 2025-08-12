@@ -183,7 +183,7 @@ class DirectoryScanner {
             hasPositionCsv: this.hasFilePattern(fileNames, /^snapshot_optoNCDT-.*\.csv$/i),
             hasTensileCsv: this.hasTensileFile(fileNames, experimentId),
             hasPhotos: this.hasImageFile(files),
-            hasThermalRavi: this.hasFilePattern(fileNames, /^record_.*\.ravi$/i),
+            hasThermalRavi: this.hasFilePattern(fileNames, /^record_.*\.avi$/i),
             hasTcp5File: this.hasFileType(fileNames, `${experimentId.toLowerCase()}_original(manuell).tpc5`),
             hasWeldJournal: this.hasFileType(fileNames, 'schweissjournal.txt'),
             hasCrownMeasurements: this.hasFileType(fileNames, 'geradheit+versatz.xlsx'),
