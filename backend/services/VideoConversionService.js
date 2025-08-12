@@ -87,38 +87,54 @@ class VideoConversionService {
         }
     }
 
-    /**
-     * Convert AVI and serve the MP4 file
-     * @param {string} experimentId - Experiment ID  
-     * @param {string} aviFilePath - Source AVI file path
-     * @returns {Promise<Object>} Service result with file serving info
-     */
-    async convertAndServe(experimentId, aviFilePath) {
-        try {
-            const conversionResult = await this.convertAndGetMp4Path(experimentId, aviFilePath);
-            
-            console.log('DEBUG - Conversion result structure:', JSON.stringify(conversionResult, null, 2));
-            
-            if (!conversionResult.success) {
-                return createServiceResult(false, conversionResult.message, 0, 0, 0, [conversionResult.error || 'Conversion failed']);
-            }
+/**
+ * Convert AVI and serve the MP4 file - SIMPLE FIX
+ * @param {string} experimentId - Experiment ID  
+ * @param {string} aviFilePath - Source AVI file path
+ * @returns {Promise<Object>} Direct result with file serving info (bypasses createServiceResult)
+ */
+async convertAndServe(experimentId, aviFilePath) {
+    try {
+        const conversionResult = await this.convertAndGetMp4Path(experimentId, aviFilePath);
+        
+        console.log('DEBUG - Conversion result structure:', JSON.stringify(conversionResult, null, 2));
+        
+        if (!conversionResult.success) {
+            return {
+                success: false,
+                message: conversionResult.message,
+                error: conversionResult.error || 'Conversion failed'
+            };
+        }
 
-            // Get MP4 path from result
-            const mp4Path = conversionResult.mp4Path;
-            if (!mp4Path) {
-                console.error('MP4 path missing from conversion result:', conversionResult);
-                return createServiceResult(false, 'MP4 path not found in conversion result', 0, 0, 0, ['Missing mp4Path in result']);
-            }
+        // Get MP4 path from result
+        const mp4Path = conversionResult.mp4Path;
+        if (!mp4Path) {
+            console.error('MP4 path missing from conversion result:', conversionResult);
+            return {
+                success: false,
+                message: 'MP4 path not found in conversion result',
+                error: 'Missing mp4Path in result'
+            };
+        }
 
-            // Verify file exists
-            if (!await this._fileExists(mp4Path)) {
-                return createServiceResult(false, 'Converted MP4 file not found', 0, 0, 0, [`File not found: ${mp4Path}`]);
-            }
+        // Verify file exists
+        if (!await this._fileExists(mp4Path)) {
+            return {
+                success: false,
+                message: 'Converted MP4 file not found',
+                error: `File not found: ${mp4Path}`
+            };
+        }
 
-            // Get file stats for serving
-            const stats = await fs.stat(mp4Path);
+        // Get file stats for serving
+        const stats = await fs.stat(mp4Path);
 
-            return createServiceResult(true, 'MP4 ready for serving', 1, 0, 0, null, {
+        // DIRECT RETURN - no createServiceResult wrapper
+        return {
+            success: true,
+            message: 'MP4 ready for serving',
+            data: {
                 mp4Path: mp4Path,
                 fileSize: stats.size,
                 convertedAt: conversionResult.convertedAt,
@@ -129,13 +145,18 @@ class VideoConversionService {
                     lastModified: stats.mtime,
                     acceptRanges: 'bytes' // Enable video seeking
                 }
-            });
+            }
+        };
 
-        } catch (error) {
-            console.error(`Error in convertAndServe for ${experimentId}:`, error);
-            return createServiceResult(false, `Serve preparation failed: ${error.message}`, 0, 0, 0, [error.toString()]);
-        }
+    } catch (error) {
+        console.error(`Error in convertAndServe for ${experimentId}:`, error);
+        return {
+            success: false,
+            message: `Serve preparation failed: ${error.message}`,
+            error: error.toString()
+        };
     }
+}
 
     /**
      * Get conversion status for an experiment
