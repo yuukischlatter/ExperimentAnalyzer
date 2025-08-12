@@ -6,7 +6,7 @@
  * TCP5 Oscilloscope Module - Styling
  * Desktop-only version with enhanced folding support
  * UPDATED: Uses generic .module-content for folding compatibility
- * Distinguished from binary oscilloscope with unique color scheme
+ * FIXED: Now uses consistent Schlatter design system colors
  * NO mobile/responsive code
  */
 
@@ -20,7 +20,7 @@
 
 /* === HEADER SECTION === */
 .tcp5-oscilloscope-header {
-    background-color: #2196F3;  /* Distinct blue instead of Schlatter blue */
+    background-color: var(--schlatter-blue);  /* FIXED: Now uses Schlatter blue */
     color: var(--text-white);
     padding: var(--spacing-md) var(--spacing-lg);
     border-bottom: none;
@@ -28,7 +28,7 @@
 }
 
 .tcp5-oscilloscope-header:hover {
-    background-color: rgba(33, 150, 243, 0.95);
+    background-color: rgba(var(--schlatter-blue-rgb), 0.95);  /* FIXED: Schlatter blue hover */
 }
 
 .tcp5-oscilloscope-header .card-title {
@@ -186,7 +186,7 @@
 
 .oscilloscope-plot .y-axis-hover-zone.active {
     pointer-events: all;
-    background-color: rgba(33, 150, 243, 0.05);  /* TCP5 blue tint */
+    background-color: rgba(var(--schlatter-blue-rgb), 0.05);  /* FIXED: Schlatter blue tint */
 }
 
 .foldable-module.collapsed .oscilloscope-plot .y-axis-hover-zone {
@@ -207,11 +207,11 @@
 }
 
 .oscilloscope-plot .plotly .modebar-btn path {
-    fill: #2196F3 !important;  /* TCP5 blue for toolbar buttons */
+    fill: var(--schlatter-blue) !important;  /* FIXED: Schlatter blue for toolbar buttons */
 }
 
 .oscilloscope-plot .plotly .modebar-btn:hover path {
-    fill: #1976D2 !important;  /* Darker blue on hover */
+    fill: var(--btn-primary-hover) !important;  /* FIXED: Consistent hover color */
 }
 
 .oscilloscope-plot .bg {
@@ -280,7 +280,7 @@
 
 /* === LOADING SPINNER CUSTOMIZATION === */
 .tcp5-oscilloscope-content .loading-spinner {
-    border-top-color: #2196F3;  /* TCP5 blue spinner */
+    border-top-color: var(--schlatter-blue);  /* FIXED: Schlatter blue spinner */
 }
 
 /* === PRINT STYLES === */

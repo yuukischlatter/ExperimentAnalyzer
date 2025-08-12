@@ -1,7 +1,7 @@
 {
   "name": "experiment-analyzer-backend",
   "version": "1.0.0",
-  "description": "Node.js backend for Schlatter Experiment Analyzer - Welding Data Analysis System with HDF5 Support",
+  "description": "Node.js backend for Schlatter Experiment Analyzer - Welding Data Analysis System with HDF5 and Thermal Analysis Support",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -13,9 +13,15 @@
     "build-native-debug": "cd native/hdf5 && npm install && npm run build-debug",
     "clean-native": "cd native/hdf5 && npm run clean",
     "rebuild-native": "cd native/hdf5 && npm run rebuild",
-    "setup": "npm install && npm run build-native",
-    "dev-with-native": "npm run build-native && npm run dev",
-    "postinstall": "npm run build-native || echo \"Warning: Native addon build failed, will use fallback\""
+    "build-thermal": "cd native/thermal && npm install && npm run build",
+    "build-thermal-debug": "cd native/thermal && npm install && npm run build-debug",
+    "clean-thermal": "cd native/thermal && npm run clean",
+    "rebuild-thermal": "cd native/thermal && npm run rebuild",
+    "build-all-native": "npm run build-native && npm run build-thermal",
+    "clean-all-native": "npm run clean-native && npm run clean-thermal",
+    "setup": "npm install && npm run build-native && npm run build-thermal",
+    "dev-with-native": "npm run build-all-native && npm run dev",
+    "postinstall": "npm run build-native || echo \"Warning: HDF5 addon build failed, will use fallback\"; npm run build-thermal || echo \"Warning: Thermal addon build failed, thermal analysis disabled\""
   },
   "keywords": [
     "welding",
@@ -27,6 +33,9 @@
     "tpc5",
     "oscilloscope",
     "time-series",
+    "thermal",
+    "video-analysis",
+    "websocket",
     "native-addon",
     "performance"
   ],
@@ -40,7 +49,10 @@
     "papaparse": "^5.4.1",
     "sqlite3": "^5.1.6",
     "xlsx": "^0.18.5",
-    "node-addon-api": "^8.5.0"
+    "node-addon-api": "^8.5.0",
+    "ws": "^8.14.0",
+    "fluent-ffmpeg": "^2.1.2",
+    "ffmpeg-static": "^5.1.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1",
@@ -64,10 +76,14 @@
   "config": {
     "hdf5_native_required": false,
     "hdf5_fallback_enabled": true,
-    "native_addon_path": "./native/hdf5/build/Release/hdf5_native.node"
+    "thermal_native_required": false,
+    "thermal_fallback_enabled": false,
+    "native_addon_path": "./native/hdf5/build/Release/hdf5_native.node",
+    "thermal_addon_path": "./native/thermal/build/Release/thermal_engine.node"
   },
   "optionalDependencies": {
-    "@backend/hdf5-native": "file:./native/hdf5"
+    "@backend/hdf5-native": "file:./native/hdf5",
+    "@backend/thermal-native": "file:./native/thermal"
   },
   "buildSettings": {
     "nativeModules": {
@@ -75,15 +91,21 @@
         "path": "./native/hdf5",
         "required": false,
         "fallback": "h5wasm"
+      },
+      "thermal": {
+        "path": "./native/thermal",
+        "required": false,
+        "fallback": "disabled"
       }
     },
     "platforms": {
       "win32": {
         "vcpkg": true,
+        "opencv": true,
         "buildTools": "Visual Studio Build Tools"
       },
       "linux": {
-        "packages": ["libhdf5-dev", "build-essential"]
+        "packages": ["libhdf5-dev", "libopencv-dev", "build-essential"]
       }
     }
   }

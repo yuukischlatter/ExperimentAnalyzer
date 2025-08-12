@@ -19,6 +19,7 @@ const SummaryService = require('../services/SummaryService');
 const ExperimentNotesRepository = require('../repositories/ExperimentNotesRepository');
 const ExperimentNotes = require('../models/ExperimentNotes');
 const Hdf5ParserService = require('../services/Hdf5ParserService');
+const ThermalParserService = require('../services/ThermalParserService');
 const { responseMiddleware } = require('../models/ApiResponse');
 
 // Apply response middleware to all routes in this router
@@ -35,6 +36,7 @@ const crownService = new CrownService();
 const summaryService = new SummaryService();
 const notesRepository = new ExperimentNotesRepository();
 const hdf5Service = new Hdf5ParserService();
+const thermalService = new ThermalParserService();
 
 // #region EXISTING EXPERIMENT ROUTES
 
@@ -130,6 +132,14 @@ router.get('/status', async (req, res) => {
                 nativeAddonAvailable: hdf5CacheStatus.capabilities?.nativeAddonSupport
             };
 
+            // Add thermal service status
+            const thermalCacheStatus = thermalService.getCacheStatus();
+            statusResult.status.thermalParserService = {
+                cachedExperiments: thermalCacheStatus.totalCachedExperiments,
+                cacheTimeout: thermalCacheStatus.cacheTimeoutMs,
+                globalTempMappingLoaded: thermalCacheStatus.globalTempMappingLoaded
+            };
+
             res.success(statusResult.status);
         } else {
             res.error(statusResult.error, 500);
@@ -193,6 +203,7 @@ router.post('/rescan', async (req, res) => {
                 crownService.clearAllCache();
                 hdf5Service.clearAllCache();
                 summaryService.clearAllCache();
+                thermalService.clearAllCache();
             }
             
             res.success({
@@ -3453,6 +3464,268 @@ router.get('/:experimentId/hdf5-file-info', async (req, res) => {
     } catch (error) {
         console.error(`Error getting HDF5 file info for ${req.params.experimentId}:`, error);
         res.error(`Failed to get HDF5 file information: ${error.message}`, 500);
+    }
+});
+
+// #endregion
+
+// #region THERMAL DATA ROUTES
+
+/**
+ * GET /api/experiments/:experimentId/thermal-metadata
+ * Get thermal video metadata and information
+ */
+router.get('/:experimentId/thermal-metadata', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { forceRefresh = false } = req.query;
+        const forceRefreshBool = forceRefresh === 'true' || forceRefresh === true;
+
+        console.log(`Getting thermal metadata for experiment: ${experimentId}`);
+
+        // Check if experiment has thermal file
+        const hasThermal = await thermalService.hasThermalFile(experimentId);
+        if (!hasThermal.exists) {
+            return res.error(`No thermal AVI file found for experiment ${experimentId}`, 404);
+        }
+
+        // Get comprehensive metadata
+        const metadataResult = await thermalService.getThermalMetadata(experimentId);
+        
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        res.success({
+            experimentId: experimentId,
+            hasValidThermalFile: true,
+            ...metadataResult
+        });
+
+    } catch (error) {
+        console.error(`Error getting thermal metadata for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get thermal metadata: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/:experimentId/thermal/analyze
+ * Analyze temperature along multiple lines for a specific frame
+ */
+router.post('/:experimentId/thermal/analyze', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { 
+            frameNum, 
+            lines 
+        } = req.body;
+
+        // Validate request body
+        if (typeof frameNum !== 'number' || isNaN(frameNum)) {
+            return res.error('frameNum must be a valid number', 400);
+        }
+
+        if (!Array.isArray(lines) || lines.length === 0) {
+            return res.error('lines must be a non-empty array', 400);
+        }
+
+        if (lines.length > 10) {
+            return res.error('Maximum 10 lines per analysis request', 400);
+        }
+
+        // Validate line coordinates
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i];
+            if (!line || typeof line.x1 !== 'number' || typeof line.y1 !== 'number' ||
+                typeof line.x2 !== 'number' || typeof line.y2 !== 'number') {
+                return res.error(`Line ${i} must have valid x1, y1, x2, y2 coordinates`, 400);
+            }
+        }
+
+        console.log(`Analyzing ${lines.length} lines for ${experimentId} frame ${frameNum}`);
+
+        // Perform analysis
+        const analysisResult = await thermalService.analyzeLines(experimentId, frameNum, lines);
+
+        if (!analysisResult.success) {
+            return res.error(analysisResult.error, 500);
+        }
+
+        res.success(analysisResult);
+
+    } catch (error) {
+        console.error(`Error analyzing thermal lines for ${req.params.experimentId}:`, error);
+        res.error(`Failed to analyze thermal lines: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/:experimentId/thermal/pixel-temperature
+ * Get temperature for specific RGB pixel values
+ */
+router.post('/:experimentId/thermal/pixel-temperature', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { r, g, b } = req.body;
+
+        // Validate RGB values
+        if (typeof r !== 'number' || typeof g !== 'number' || typeof b !== 'number' ||
+            r < 0 || r > 255 || g < 0 || g > 255 || b < 0 || b > 255 ||
+            isNaN(r) || isNaN(g) || isNaN(b)) {
+            return res.error('RGB values must be valid numbers between 0 and 255', 400);
+        }
+
+        console.log(`Getting pixel temperature for ${experimentId} RGB(${r},${g},${b})`);
+
+        // Get pixel temperature
+        const tempResult = await thermalService.getPixelTemperature(experimentId, r, g, b);
+
+        if (!tempResult.success) {
+            return res.error(tempResult.error, 500);
+        }
+
+        res.success(tempResult);
+
+    } catch (error) {
+        console.error(`Error getting pixel temperature for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get pixel temperature: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/thermal/video
+ * Serve converted MP4 file for browser playback (placeholder for future implementation)
+ */
+router.get('/:experimentId/thermal/video', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        // Check if thermal file exists
+        const hasThermal = await thermalService.hasThermalFile(experimentId);
+        if (!hasThermal.exists) {
+            return res.error(`No thermal file found for experiment ${experimentId}`, 404);
+        }
+
+        // For now, return file info (video serving would require FFmpeg conversion)
+        res.success({
+            experimentId: experimentId,
+            message: 'Video serving not yet implemented',
+            availableFile: hasThermal.filePath,
+            note: 'Use WebSocket for real-time analysis, video serving requires FFmpeg conversion'
+        });
+
+    } catch (error) {
+        console.error(`Error serving thermal video for ${req.params.experimentId}:`, error);
+        res.error(`Failed to serve thermal video: ${error.message}`, 500);
+    }
+});
+
+/**
+ * DELETE /api/experiments/:experimentId/thermal-cache
+ * Clear cached thermal data for experiment
+ */
+router.delete('/:experimentId/thermal-cache', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Clearing thermal cache for experiment: ${experimentId}`);
+
+        thermalService.clearCache(experimentId);
+
+        res.success({
+            message: `Thermal cache cleared for experiment ${experimentId}`,
+            experimentId: experimentId,
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error clearing thermal cache for ${req.params.experimentId}:`, error);
+        res.error(`Failed to clear thermal cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/thermal-service/status
+ * Get thermal parser service status and cache information
+ */
+router.get('/thermal-service/status', async (req, res) => {
+    try {
+        const serviceStatus = thermalService.getServiceStatus();
+        
+        res.success({
+            ...serviceStatus,
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error getting thermal service status:', error);
+        res.error(`Failed to get thermal service status: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/thermal-service/clear-all-cache
+ * Clear all cached thermal data
+ */
+router.post('/thermal-service/clear-all-cache', async (req, res) => {
+    try {
+        console.log('Clearing all thermal parser cache...');
+
+        thermalService.clearAllCache();
+
+        res.success({
+            message: 'All thermal parser cache cleared successfully',
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error clearing all thermal cache:', error);
+        res.error(`Failed to clear all thermal cache: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/thermal-file-info
+ * Get thermal file information without parsing (quick check)
+ */
+router.get('/:experimentId/thermal-file-info', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        // Check if thermal file exists
+        const hasThermalResult = await thermalService.hasThermalFile(experimentId);
+
+        if (!hasThermalResult.exists) {
+            return res.success({
+                experimentId: experimentId,
+                hasFile: false,
+                expectedPath: hasThermalResult.expectedPath,
+                foundFiles: hasThermalResult.foundFiles || [],
+                message: 'Thermal AVI file not found'
+            });
+        }
+
+        // Get basic file information
+        const fs = require('fs').promises;
+        const path = require('path');
+        const stats = await fs.stat(hasThermalResult.filePath);
+
+        res.success({
+            experimentId: experimentId,
+            hasFile: true,
+            filePath: hasThermalResult.filePath,
+            fileName: path.basename(hasThermalResult.filePath),
+            fileExtension: hasThermalResult.fileExtension || '.avi',
+            fileSize: stats.size,
+            fileSizeMB: (stats.size / 1024 / 1024).toFixed(1),
+            lastModified: stats.mtime,
+            created: stats.birthtime,
+            foundFiles: hasThermalResult.foundFiles || [path.basename(hasThermalResult.filePath)]
+        });
+
+    } catch (error) {
+        console.error(`Error getting thermal file info for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get thermal file information: ${error.message}`, 500);
     }
 });
 

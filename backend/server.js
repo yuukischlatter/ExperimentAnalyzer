@@ -1,11 +1,13 @@
 /**
  * Experiment Analyzer - Node.js Backend Server
  * Main entry point (equivalent to C# Program.cs)
+ * Enhanced with WebSocket support for thermal analysis
  */
 
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
+const WebSocket = require('ws');
 const config = require('./config/config');
 
 // Import middleware
@@ -17,6 +19,7 @@ const experimentsRouter = require('./routes/experiments');
 // Import services
 const { initializeDatabase } = require('./database/connection');
 const StartupService = require('./services/StartupService');
+const ThermalWebSocketService = require('./services/ThermalWebSocketService');
 
 async function createApp() {
     const app = express();
@@ -107,6 +110,31 @@ async function startServer() {
         // Create Express app
         const app = await createApp();
 
+        // Create HTTP server (needed for WebSocket integration)
+        const server = require('http').createServer(app);
+
+        // Initialize WebSocket server for thermal analysis
+        console.log('Initializing WebSocket server for thermal analysis...');
+        const wss = new WebSocket.Server({ 
+            server,
+            path: '/thermal-ws'
+        });
+
+        // Initialize thermal WebSocket service
+        const thermalWebSocketService = new ThermalWebSocketService();
+
+        // Handle WebSocket connections
+        wss.on('connection', (ws, request) => {
+            thermalWebSocketService.handleConnection(ws, request);
+        });
+
+        // WebSocket server error handling
+        wss.on('error', (error) => {
+            console.error('❌ WebSocket server error:', error);
+        });
+
+        console.log('✓ WebSocket server initialized for thermal analysis');
+
         // Run startup services (equivalent to C# startup scope in Program.cs)
         if (config.app.autoScanOnStartup) {
             console.log('Running startup data services...');
@@ -121,27 +149,53 @@ async function startServer() {
         }
 
         // Start server
-        const server = app.listen(config.server.port, config.server.host, () => {
+        const serverInstance = server.listen(config.server.port, config.server.host, () => {
             console.log(`Server running on http://${config.server.host}:${config.server.port}`);
+            console.log(`WebSocket endpoint: ws://${config.server.host}:${config.server.port}/thermal-ws`);
             console.log(`Experiment Analyzer ready for use!`);
+            console.log(`🔥 Thermal analysis WebSocket server active`);
         });
+
+        // Setup periodic cleanup for WebSocket service
+        const cleanupInterval = setInterval(() => {
+            thermalWebSocketService.cleanupInactiveConnections();
+        }, 60000); // Every minute
 
         // Graceful shutdown
-        process.on('SIGTERM', () => {
-            console.log('Shutting down server gracefully...');
-            server.close(() => {
+        const shutdown = (signal) => {
+            console.log(`\nShutting down server gracefully after ${signal}...`);
+            
+            // Clear cleanup interval
+            clearInterval(cleanupInterval);
+            
+            // Close WebSocket server
+            console.log('Closing WebSocket server...');
+            wss.close(() => {
+                console.log('✓ WebSocket server closed');
+            });
+            
+            // Close HTTP server
+            serverInstance.close(() => {
                 console.log('✓ Server closed');
                 process.exit(0);
             });
-        });
+            
+            // Force exit after timeout
+            setTimeout(() => {
+                console.log('⚠️ Force exit after timeout');
+                process.exit(1);
+            }, 10000);
+        };
 
-        process.on('SIGINT', () => {
-            console.log('Shutting down server gracefully...');
-            server.close(() => {
-                console.log('✓ Server closed');
-                process.exit(0);
-            });
-        });
+        process.on('SIGTERM', () => shutdown('SIGTERM'));
+        process.on('SIGINT', () => shutdown('SIGINT'));
+
+        // Log WebSocket server status
+        console.log('📊 WebSocket Server Status:');
+        console.log(`   Path: /thermal-ws`);
+        console.log(`   Max Connections: Unlimited`);
+        console.log(`   Cleanup Interval: 60 seconds`);
+        console.log(`   Supported Messages: loadVideo, analyzeLines, pixelTemperature`);
 
     } catch (error) {
         console.error('Failed to start server:', error);
