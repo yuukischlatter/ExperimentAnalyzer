@@ -34,7 +34,7 @@
         </div>
         
         <!-- Main Content Container -->
-        <div data-bind="sectionsContainer" class="thermal-sections-container hidden">
+        <div data-bind="sectionsContainer" class="thermal-sections-container">
             
             <!-- Video Section (Top-Left) -->
             <div class="thermal-video-section">
@@ -42,7 +42,9 @@
                     
                     <!-- Video Container with Canvas Overlay -->
                     <div class="video-container">
-                        <video data-bind="thermalVideo" id="thermal-video" preload="metadata" muted>
+                        <video data-bind="thermalVideo" id="thermal-video" 
+                               src="PLACEHOLDER_VIDEO_URL" 
+                               preload="metadata" muted controls>
                             <p>Your browser doesn't support video playback.</p>
                         </video>
                         <canvas data-bind="lineOverlay" id="line-overlay"></canvas>
@@ -50,12 +52,12 @@
                     
                     <!-- Video Controls -->
                     <div class="video-controls">
-                        <button data-bind="playButton" id="play-btn" class="btn btn-primary" disabled>
+                        <button data-bind="playButton" id="play-btn" class="btn btn-primary">
                             <span data-bind="playButtonText">Play</span>
                         </button>
                         
                         <input data-bind="frameSlider" id="frame-slider" type="range" 
-                               min="0" max="100" value="0" class="frame-slider" disabled>
+                               min="0" max="100" value="0" class="frame-slider">
                         
                         <div class="frame-info">
                             <span data-bind="frameInfo" id="frame-info">Frame: 0 / 0</span>
@@ -81,7 +83,7 @@
                     <div data-bind="verticalTemperaturePlot" id="vertical-temperature-plot" class="thermal-plot vertical-plot"></div>
                 </div>
                 <div class="chart-info">
-                    <p class="text-xs text-muted">Temperature vs. Position (% from top)</p>
+                    <p class="text-xs text-muted">Temperature vs. Position (%)</p>
                 </div>
             </div>
             
@@ -101,10 +103,10 @@
                             <span class="status-text">Not Ready</span>
                         </div>
                         
-                        <div class="status-indicator" data-bind="videoStatus" data-status="not-loaded">
+                        <div class="status-indicator" data-bind="videoStatus" data-status="loading">
                             <span class="status-dot"></span>
                             <span class="status-label">Video</span>
-                            <span class="status-text">Not Loaded</span>
+                            <span class="status-text">Loading</span>
                         </div>
                     </div>
                     
@@ -132,7 +134,7 @@
                     <div data-bind="horizontalTemperaturePlot" id="horizontal-temperature-plot" class="thermal-plot horizontal-plot"></div>
                 </div>
                 <div class="chart-info">
-                    <p class="text-xs text-muted">Position (% from left) vs. Temperature</p>
+                    <p class="text-xs text-muted">Position (%) vs. Temperature</p>
                 </div>
             </div>
             

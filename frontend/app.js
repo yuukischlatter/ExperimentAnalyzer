@@ -375,7 +375,7 @@ class ExperimentAnalyzer {
             'hasPhotos': 'photo-gallery',
             'hasThermalRavi': 'thermal-ir',  
             'hasTcp5File': 'tcp5-oscilloscope',
-            'hasWeldJournal': 'weld-journal',
+            //'hasWeldJournal': 'weld-journal',
             'hasCrownMeasurements': 'crown-measurements',
             'hasAmbientTemperature': 'ambient-temperature',
             'hasBinFile': 'bin-oscilloscope'
