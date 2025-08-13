@@ -1,7 +1,7 @@
 /**
- * Thermal IR Module - Chart.js Implementation
+ * Thermal IR Module - Chart.js Implementation with Raw Data Display
  * Interactive thermal video analysis with high-performance Chart.js visualization
- * Features: Direct video loading, immediate canvas interaction, optimized real-time charts
+ * Features: Direct video loading, immediate canvas interaction, raw data visualization
  */
 
 class ThermalIr {
@@ -9,14 +9,14 @@ class ThermalIr {
         this.containerId = containerId;
         this.config = { ...this.getDefaultConfig(), ...config };
         
-        // Simplified state - only essentials
+        // Simplified state - dynamic values start at 0
         this.state = {
             experimentId: null,
             wsConnected: false,
             engineReady: false,
             currentFrame: 0,
-            totalFrames: 3674, // Actual frame count
-            fps: 14.108, // Actual FPS
+            totalFrames: 0, // Dynamic - starts at 0, updated from API
+            fps: 0, // Dynamic - starts at 0, updated from API
             isPlaying: false,
             
             // Line positions
@@ -54,7 +54,6 @@ class ThermalIr {
             apiBaseUrl: '/api',
             wsEndpoint: '/thermal-ws',
             maxAnalysisRate: 10,
-            maxDisplayPoints: 500, // Chart.js can handle more points efficiently
             colors: {
                 line1: '#2563eb', // Horizontal (blue)
                 line2: '#059669', // Vertical (green)
@@ -62,9 +61,9 @@ class ThermalIr {
                 background: 'rgba(37, 99, 235, 0.1)',
                 background2: 'rgba(5, 150, 105, 0.1)'
             },
-            videoAspectRatio: 908/1200, // Exact aspect ratio
-            videoWidth: 908,
-            videoHeight: 1200,
+            videoAspectRatio: 908/1200, // Default - will be updated from API
+            videoWidth: 908, // Default - will be updated from API
+            videoHeight: 1200, // Default - will be updated from API
             dragThreshold: 15,
             reconnectDelay: 3000,
             chartHeights: {
@@ -183,7 +182,7 @@ class ThermalIr {
                 console.log(`Video source set: ${videoUrl}`);
             }
             
-            // Setup frame slider with correct values
+            // Setup frame slider with initial values (will be updated when video loads)
             this.setupFrameSlider();
             
             // Setup canvas immediately (independent of video/WebSocket)
@@ -201,7 +200,7 @@ class ThermalIr {
     }
     
     /**
-     * Setup frame slider with correct frame count
+     * Setup frame slider with initial values
      */
     setupFrameSlider() {
         if (this.elements.frameSlider) {
@@ -288,7 +287,7 @@ class ThermalIr {
     }
     
     /**
-     * Handle video loaded in engine
+     * Handle video loaded in engine - UPDATED: Now calls dynamic update functions
      */
     handleVideoLoadedInEngine(data) {
         console.log('Thermal engine ready:', data);
@@ -298,14 +297,51 @@ class ThermalIr {
         // Update video info if available from engine
         if (data.metadata?.videoInfo) {
             const info = data.metadata.videoInfo;
-            this.state.totalFrames = info.frames || 3674;
-            this.state.fps = info.fps || 14.108;
             
-            // Update slider max value
-            if (this.elements.frameSlider) {
-                this.elements.frameSlider.max = this.state.totalFrames;
+            // Update state with dynamic values
+            this.state.totalFrames = info.frames || 0;
+            this.state.fps = info.fps || 0;
+            
+            // Update video dimensions if provided
+            if (info.width && info.height) {
+                this.config.videoWidth = info.width;
+                this.config.videoHeight = info.height;
+                this.config.videoAspectRatio = info.width / info.height;
             }
+            
+            // Update UI elements with dynamic values
+            this.updateVideoMetadata(info);
+            this.updateFrameSlider(this.state.totalFrames);
+            
+            console.log(`Video metadata updated: ${this.state.totalFrames} frames, ${this.state.fps} FPS`);
         }
+    }
+    
+    /**
+     * Update video metadata display - NEW FUNCTION
+     */
+    updateVideoMetadata(videoInfo) {
+        if (this.elements.videoInfo) {
+            const frames = videoInfo.frames || this.state.totalFrames || 0;
+            const fps = videoInfo.fps || this.state.fps || 0;
+            const width = videoInfo.width || this.config.videoWidth || 0;
+            const height = videoInfo.height || this.config.videoHeight || 0;
+            
+            this.elements.videoInfo.textContent = `${frames} frames, ${fps.toFixed(3)} FPS, ${width}x${height}`;
+        }
+    }
+    
+    /**
+     * Update frame slider and frame info - NEW FUNCTION
+     */
+    updateFrameSlider(totalFrames) {
+        // Update slider max value
+        if (this.elements.frameSlider) {
+            this.elements.frameSlider.max = totalFrames;
+        }
+        
+        // Update frame info display
+        this.updateFrameInfo(this.state.currentFrame);
     }
     
     sendWebSocketMessage(type, data) {
@@ -337,7 +373,7 @@ class ThermalIr {
         const videoContainer = this.video.parentElement;
         const containerRect = videoContainer.getBoundingClientRect();
         
-        // Calculate proper dimensions maintaining 908:1200 aspect ratio
+        // Calculate proper dimensions maintaining aspect ratio
         const aspectRatio = this.config.videoAspectRatio;
         
         let canvasWidth, canvasHeight;
@@ -543,7 +579,7 @@ class ThermalIr {
     handleVideoTimeUpdate() {
         if (!this.video || this.video.duration === 0) return;
         
-        // Calculate current frame using actual FPS
+        // Calculate current frame using dynamic FPS
         const currentFrame = Math.floor(this.video.currentTime * this.state.fps);
         this.state.currentFrame = currentFrame;
         
@@ -575,7 +611,7 @@ class ThermalIr {
     }
     
     seekToFrame(frameNumber) {
-        if (!this.video) return;
+        if (!this.video || this.state.fps === 0) return;
         
         const time = frameNumber / this.state.fps;
         this.video.currentTime = time;
@@ -677,29 +713,6 @@ class ThermalIr {
     }
     
     /**
-     * Data decimation for performance (Chart.js can handle more, but still good to optimize)
-     */
-    decimateData(temperatures, maxPoints = null) {
-        if (!temperatures || temperatures.length === 0) return [];
-        
-        const targetPoints = maxPoints || this.config.maxDisplayPoints;
-        
-        if (temperatures.length <= targetPoints) {
-            return temperatures; // No decimation needed
-        }
-        
-        const step = temperatures.length / targetPoints;
-        const decimated = [];
-        
-        for (let i = 0; i < targetPoints; i++) {
-            const index = Math.floor(i * step);
-            decimated.push(temperatures[index]);
-        }
-        
-        return decimated;
-    }
-    
-    /**
      * Create temperature charts - Chart.js Implementation
      */
     initializeCharts() {
@@ -714,218 +727,218 @@ class ThermalIr {
     }
     
     createHorizontalChart() {
-        const canvas = this.elements.horizontalTemperaturePlot;
-        if (!canvas) {
-            console.error('Horizontal chart canvas not found');
-            return;
-        }
-        
-        const ctx = canvas.getContext('2d');
-        
-        this.charts.horizontal = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [], // Position percentages
-                datasets: [{
-                    label: 'Temperature',
-                    data: [],
-                    borderColor: this.config.colors.line1,
-                    backgroundColor: this.config.colors.background,
-                    borderWidth: 2,
-                    pointRadius: 0, // No points for performance with high-resolution data
-                    pointHoverRadius: 4,
-                    fill: false,
-                    tension: 0.1 // Slight smoothing
-                }]
+    const canvas = this.elements.horizontalTemperaturePlot;
+    if (!canvas) {
+        console.error('Horizontal chart canvas not found');
+        return;
+    }
+    
+    const ctx = canvas.getContext('2d');
+    
+    this.charts.horizontal = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [], // Raw position indices
+            datasets: [{
+                label: 'Temperature',
+                data: [],
+                borderColor: this.config.colors.line1,
+                backgroundColor: this.config.colors.background,
+                borderWidth: 2,
+                pointRadius: 0, // No points for performance with high-resolution data
+                pointHoverRadius: 4,
+                fill: false,
+                tension: 0.1 // Slight smoothing
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+                duration: 0 // Disable animations for real-time performance
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: {
-                    duration: 0 // Disable animations for real-time performance
-                },
-                scales: {
-                    x: {
-                        type: 'linear',
-                        position: 'bottom',
-                        title: {
-                            display: true,
-                            text: 'Position (%)',
-                            color: '#374151',
-                            font: { size: 12, weight: 'bold' }
-                        },
-                        min: 0,
-                        max: 100,
-                        grid: {
-                            color: this.config.colors.grid,
-                            lineWidth: 1
-                        },
-                        ticks: {
-                            color: '#6B7280'
-                        }
+            scales: {
+                x: {
+                    type: 'linear',
+                    position: 'bottom',
+                    title: {
+                        display: true,
+                        text: 'Position (Data Point)',
+                        color: '#374151',
+                        font: { size: 12, weight: 'bold' }
                     },
-                    y: {
-                        title: {
-                            display: true,
-                            text: 'Temperature (°C)',
-                            color: '#374151',
-                            font: { size: 12, weight: 'bold' }
-                        },
-                        grid: {
-                            color: this.config.colors.grid,
-                            lineWidth: 1
-                        },
-                        ticks: {
-                            color: '#6B7280'
-                        }
+                    beginAtZero: true,
+                    grace: 0, // Remove padding/buffer
+                    grid: {
+                        color: this.config.colors.grid,
+                        lineWidth: 1
+                    },
+                    ticks: {
+                        color: '#6B7280'
                     }
                 },
-                plugins: {
-                    legend: {
-                        display: false // Hide legend for cleaner look
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Temperature (°C)',
+                        color: '#374151',
+                        font: { size: 12, weight: 'bold' }
                     },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                        titleColor: '#ffffff',
-                        bodyColor: '#ffffff',
-                        borderColor: this.config.colors.line1,
-                        borderWidth: 1
-                    }
-                },
-                interaction: {
-                    mode: 'index',
-                    intersect: false
-                },
-                elements: {
-                    line: {
-                        tension: 0.1
+                    min: 600, // Fixed temperature range
+                    max: 1500, // Fixed temperature range
+                    grid: {
+                        color: this.config.colors.grid,
+                        lineWidth: 1
+                    },
+                    ticks: {
+                        color: '#6B7280'
                     }
                 }
+            },
+            plugins: {
+                legend: {
+                    display: false // Hide legend for cleaner look
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: '#ffffff',
+                    bodyColor: '#ffffff',
+                    borderColor: this.config.colors.line1,
+                    borderWidth: 1
+                }
+            },
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            elements: {
+                line: {
+                    tension: 0.1
+                }
             }
-        });
-    }
+        }
+    });
+}
     
     createVerticalChart() {
-        const canvas = this.elements.verticalTemperaturePlot;
-        if (!canvas) {
-            console.error('Vertical chart canvas not found');
-            return;
-        }
-        
-        const ctx = canvas.getContext('2d');
-        
-        this.charts.vertical = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [], // Temperature values
-                datasets: [{
-                    label: 'Position',
-                    data: [],
-                    borderColor: this.config.colors.line2,
-                    backgroundColor: this.config.colors.background2,
-                    borderWidth: 2,
-                    pointRadius: 0, // No points for performance with high-resolution data
-                    pointHoverRadius: 4,
-                    fill: false,
-                    tension: 0.1 // Slight smoothing
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                animation: {
-                    duration: 0 // Disable animations for real-time performance
-                },
-                scales: {
-                    x: {
-                        type: 'linear',
-                        position: 'bottom',
-                        title: {
-                            display: true,
-                            text: 'Temperature (°C)',
-                            color: '#374151',
-                            font: { size: 12, weight: 'bold' }
-                        },
-                        grid: {
-                            color: this.config.colors.grid,
-                            lineWidth: 1
-                        },
-                        ticks: {
-                            color: '#6B7280'
-                        }
-                    },
-                    y: {
-                        title: {
-                            display: true,
-                            text: 'Position (% from top)',
-                            color: '#374151',
-                            font: { size: 12, weight: 'bold' }
-                        },
-                        min: 0,
-                        max: 100,
-                        reverse: true, // Reverse Y-axis (top to bottom)
-                        grid: {
-                            color: this.config.colors.grid,
-                            lineWidth: 1
-                        },
-                        ticks: {
-                            color: '#6B7280'
-                        }
-                    }
-                },
-                plugins: {
-                    legend: {
-                        display: false // Hide legend for cleaner look
-                    },
-                    tooltip: {
-                        mode: 'index',
-                        intersect: false,
-                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                        titleColor: '#ffffff',
-                        bodyColor: '#ffffff',
-                        borderColor: this.config.colors.line2,
-                        borderWidth: 1
-                    }
-                },
-                interaction: {
-                    mode: 'index',
-                    intersect: false
-                },
-                elements: {
-                    line: {
-                        tension: 0.1
-                    }
-                }
-            }
-        });
+    const canvas = this.elements.verticalTemperaturePlot;
+    if (!canvas) {
+        console.error('Vertical chart canvas not found');
+        return;
     }
     
+    const ctx = canvas.getContext('2d');
+    
+    this.charts.vertical = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [], // Temperature values
+            datasets: [{
+                label: 'Position',
+                data: [],
+                borderColor: this.config.colors.line2,
+                backgroundColor: this.config.colors.background2,
+                borderWidth: 2,
+                pointRadius: 0, // No points for performance with high-resolution data
+                pointHoverRadius: 4,
+                fill: false,
+                tension: 0.1 // Slight smoothing
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: {
+                duration: 0 // Disable animations for real-time performance
+            },
+            scales: {
+                x: {
+                    type: 'linear',
+                    position: 'bottom',
+                    title: {
+                        display: true,
+                        text: 'Temperature (°C)',
+                        color: '#374151',
+                        font: { size: 12, weight: 'bold' }
+                    },
+                    min: 600, // Fixed temperature range
+                    max: 1500, // Fixed temperature range
+                    grid: {
+                        color: this.config.colors.grid,
+                        lineWidth: 1
+                    },
+                    ticks: {
+                        color: '#6B7280'
+                    }
+                },
+                y: {
+                    title: {
+                        display: true,
+                        text: 'Position (Data Point)',
+                        color: '#374151',
+                        font: { size: 12, weight: 'bold' }
+                    },
+                    reverse: true, // Reverse Y-axis (top to bottom)
+                    beginAtZero: true,
+                    grace: 0, // Remove padding/buffer
+                    grid: {
+                        color: this.config.colors.grid,
+                        lineWidth: 1
+                    },
+                    ticks: {
+                        color: '#6B7280'
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false // Hide legend for cleaner look
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    titleColor: '#ffffff',
+                    bodyColor: '#ffffff',
+                    borderColor: this.config.colors.line2,
+                    borderWidth: 1
+                }
+            },
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            elements: {
+                line: {
+                    tension: 0.1
+                }
+            }
+        }
+    });
+}
+    
     /**
-     * Update charts using Chart.js efficient update methods
+     * Update charts using Chart.js efficient update methods - SIMPLIFIED RAW DATA
      */
     updateHorizontalChart(temperatures) {
         if (!this.charts.horizontal || !temperatures || temperatures.length === 0) return;
         
         try {
-            // Optional decimation for very large datasets
-            const processedTemps = temperatures.length > this.config.maxDisplayPoints 
-                ? this.decimateData(temperatures) 
-                : temperatures;
-            
-            // Generate position labels (X-axis)
-            const positions = processedTemps.map((_, index) => 
-                Math.round((index / (processedTemps.length - 1)) * 100)
-            );
+            // Use raw data - no decimation, no percentage conversion
+            const positions = temperatures.map((_, index) => index); // Just 0, 1, 2, 3, 4...
             
             // Update chart data efficiently
             this.charts.horizontal.data.labels = positions;
-            this.charts.horizontal.data.datasets[0].data = processedTemps.map((temp, index) => ({
-                x: positions[index],
-                y: temp
+            this.charts.horizontal.data.datasets[0].data = temperatures.map((temp, index) => ({
+                x: index, // Raw position index
+                y: temp   // Raw temperature value
             }));
             
+             // Fix X-axis max to remove buffer
+            this.charts.horizontal.options.scales.x.max = temperatures.length - 1;
+
             // Update without animation for real-time performance
             this.charts.horizontal.update('none');
             
@@ -938,23 +951,19 @@ class ThermalIr {
         if (!this.charts.vertical || !temperatures || temperatures.length === 0) return;
         
         try {
-            // Optional decimation for very large datasets
-            const processedTemps = temperatures.length > this.config.maxDisplayPoints 
-                ? this.decimateData(temperatures) 
-                : temperatures;
-            
-            // Generate position labels (Y-axis) - no need to reverse here since Y-axis is reversed
-            const positions = processedTemps.map((_, index) => 
-                Math.round((index / (processedTemps.length - 1)) * 100)
-            );
+            // Use raw data - no decimation, no percentage conversion
+            const positions = temperatures.map((_, index) => index); // Just 0, 1, 2, 3, 4...
             
             // Update chart data efficiently
-            this.charts.vertical.data.labels = processedTemps;
-            this.charts.vertical.data.datasets[0].data = processedTemps.map((temp, index) => ({
-                x: temp,
-                y: positions[index]
+            this.charts.vertical.data.labels = temperatures;
+            this.charts.vertical.data.datasets[0].data = temperatures.map((temp, index) => ({
+                x: temp,  // Raw temperature value
+                y: index  // Raw position index
             }));
             
+            // Fix Y-axis max to remove buffer
+            this.charts.vertical.options.scales.y.max = temperatures.length - 1;
+
             // Update without animation for real-time performance
             this.charts.vertical.update('none');
             
