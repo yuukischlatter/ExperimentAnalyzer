@@ -1,7 +1,7 @@
 /**
- * Thermal IR Module - Simplified
- * Interactive thermal video analysis with independent component initialization
- * Features: Direct video loading, immediate canvas interaction, background WebSocket analysis
+ * Thermal IR Module - Chart.js Implementation
+ * Interactive thermal video analysis with high-performance Chart.js visualization
+ * Features: Direct video loading, immediate canvas interaction, optimized real-time charts
  */
 
 class ThermalIr {
@@ -23,7 +23,11 @@ class ThermalIr {
             line1: { x1: 0, y1: 0, x2: 0, y2: 0 }, // Horizontal (blue)
             line2: { x1: 0, y1: 0, x2: 0, y2: 0 }, // Vertical (green)
             dragging: null,
-            lastAnalysisTime: 0
+            lastAnalysisTime: 0,
+            
+            // Chart state
+            chartsInitialized: false,
+            lastUpdateTime: 0
         };
         
         // DOM elements and objects
@@ -32,12 +36,16 @@ class ThermalIr {
         this.video = null;
         this.canvas = null;
         this.ctx = null;
-        this.plots = {
+        this.charts = {
             horizontal: null,
             vertical: null
         };
         
-        console.log('ThermalIr initialized');
+        // Performance optimization
+        this.updateQueue = [];
+        this.isUpdating = false;
+        
+        console.log('ThermalIr initialized with Chart.js');
         this.init();
     }
     
@@ -46,17 +54,23 @@ class ThermalIr {
             apiBaseUrl: '/api',
             wsEndpoint: '/thermal-ws',
             maxAnalysisRate: 10,
-            plotHeight: 250,
+            maxDisplayPoints: 500, // Chart.js can handle more points efficiently
             colors: {
                 line1: '#2563eb', // Horizontal (blue)
                 line2: '#059669', // Vertical (green)
-                grid: 'rgba(0, 50, 120, 0.1)'
+                grid: 'rgba(0, 50, 120, 0.1)',
+                background: 'rgba(37, 99, 235, 0.1)',
+                background2: 'rgba(5, 150, 105, 0.1)'
             },
             videoAspectRatio: 908/1200, // Exact aspect ratio
             videoWidth: 908,
             videoHeight: 1200,
             dragThreshold: 15,
-            reconnectDelay: 3000
+            reconnectDelay: 3000,
+            chartHeights: {
+                horizontal: 200,
+                vertical: 400
+            }
         };
     }
     
@@ -65,10 +79,10 @@ class ThermalIr {
             await this.loadTemplate();
             this.bindElements();
             this.attachEvents();
-            this.createTemperatureCharts();
+            this.initializeCharts();
             this.show();
             
-            console.log('ThermalIr initialized successfully');
+            console.log('ThermalIr initialized successfully with Chart.js');
             
         } catch (error) {
             console.error('ThermalIr initialization failed:', error);
@@ -143,6 +157,9 @@ class ThermalIr {
                 delete this.elements.frameSlider.dataset.dragging;
             });
         }
+        
+        // Window resize for chart responsiveness
+        window.addEventListener('resize', () => this.handleResize());
     }
     
     /**
@@ -418,7 +435,7 @@ class ThermalIr {
             
             this.updateDraggedEndpoint(constrainedX, constrainedY);
             this.drawLines();
-            this.requestAnalysis();
+            this.requestAnalysisDebounced();
         } else {
             const nearestEndpoint = this.getNearestEndpoint(x, y);
             this.canvas.className = nearestEndpoint ? 'grab-cursor' : '';
@@ -537,7 +554,7 @@ class ThermalIr {
             this.elements.frameSlider.value = currentFrame;
         }
         
-        this.requestAnalysis();
+        this.requestAnalysisDebounced();
     }
     
     handleVideoMetadata() {
@@ -546,13 +563,15 @@ class ThermalIr {
             this.adjustCanvasSize();
             this.initializeDefaultLines();
             this.drawLines();
+            // Resize charts to match new container
+            this.handleResize();
         }, 100);
     }
     
     handleFrameSlider(event) {
         const frameNumber = parseInt(event.target.value);
         this.seekToFrame(frameNumber);
-        this.requestAnalysis();
+        this.requestAnalysisDebounced();
     }
     
     seekToFrame(frameNumber) {
@@ -568,6 +587,37 @@ class ThermalIr {
         if (this.elements.frameInfo) {
             this.elements.frameInfo.textContent = `Frame: ${frameNumber} / ${this.state.totalFrames}`;
         }
+    }
+    
+    /**
+     * Handle window resize
+     */
+    handleResize() {
+        if (this.state.chartsInitialized) {
+            // Resize Chart.js charts
+            setTimeout(() => {
+                if (this.charts.horizontal) {
+                    this.charts.horizontal.resize();
+                }
+                if (this.charts.vertical) {
+                    this.charts.vertical.resize();
+                }
+            }, 100);
+        }
+        
+        // Resize canvas
+        this.adjustCanvasSize();
+        this.drawLines();
+    }
+    
+    /**
+     * Debounced analysis request for smooth interactions
+     */
+    requestAnalysisDebounced() {
+        clearTimeout(this.analysisTimeout);
+        this.analysisTimeout = setTimeout(() => {
+            this.requestAnalysis();
+        }, 100); // 100ms debounce
     }
     
     /**
@@ -615,8 +665,6 @@ class ThermalIr {
             // Log resolution information for debugging
             console.log('Line 1 temperature points:', line1Result.temperatures?.length);
             console.log('Line 2 temperature points:', line2Result.temperatures?.length);
-            console.log('Line 1 sample temperatures (first 10):', line1Result.temperatures?.slice(0, 10));
-            console.log('Line 2 sample temperatures (first 10):', line2Result.temperatures?.slice(0, 10));
             
             if (line1Result.success && line1Result.temperatures) {
                 this.updateHorizontalChart(line1Result.temperatures);
@@ -629,82 +677,290 @@ class ThermalIr {
     }
     
     /**
-     * Create temperature charts
+     * Data decimation for performance (Chart.js can handle more, but still good to optimize)
      */
-    createTemperatureCharts() {
-        this.createHorizontalChart();
-        this.createVerticalChart();
+    decimateData(temperatures, maxPoints = null) {
+        if (!temperatures || temperatures.length === 0) return [];
+        
+        const targetPoints = maxPoints || this.config.maxDisplayPoints;
+        
+        if (temperatures.length <= targetPoints) {
+            return temperatures; // No decimation needed
+        }
+        
+        const step = temperatures.length / targetPoints;
+        const decimated = [];
+        
+        for (let i = 0; i < targetPoints; i++) {
+            const index = Math.floor(i * step);
+            decimated.push(temperatures[index]);
+        }
+        
+        return decimated;
+    }
+    
+    /**
+     * Create temperature charts - Chart.js Implementation
+     */
+    initializeCharts() {
+        try {
+            this.createHorizontalChart();
+            this.createVerticalChart();
+            this.state.chartsInitialized = true;
+            console.log('Chart.js charts initialized successfully');
+        } catch (error) {
+            console.error('Failed to initialize Chart.js charts:', error);
+        }
     }
     
     createHorizontalChart() {
-        const traces = [{
-            x: [], y: [],
-            type: 'scatter', mode: 'lines', // Changed from 'lines+markers' for high-resolution data
-            line: { color: this.config.colors.line1, width: 2 },
-            name: 'Temperature'
-        }];
+        const canvas = this.elements.horizontalTemperaturePlot;
+        if (!canvas) {
+            console.error('Horizontal chart canvas not found');
+            return;
+        }
         
-        const layout = {
-            title: '',
-            xaxis: { title: 'Position (%)', range: [0, 100], showgrid: true, gridcolor: this.config.colors.grid },
-            yaxis: { title: 'Temperature (°C)', showgrid: true, gridcolor: this.config.colors.grid },
-            height: this.config.plotHeight,
-            margin: { l: 60, r: 40, t: 30, b: 50 },
-            plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
-        };
+        const ctx = canvas.getContext('2d');
         
-        this.plots.horizontal = Plotly.newPlot(this.elements.horizontalTemperaturePlot, traces, layout, {
-            responsive: true, displayModeBar: true, displaylogo: false,
-            modeBarButtonsToRemove: ['pan2d', 'select2d', 'lasso2d']
+        this.charts.horizontal = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [], // Position percentages
+                datasets: [{
+                    label: 'Temperature',
+                    data: [],
+                    borderColor: this.config.colors.line1,
+                    backgroundColor: this.config.colors.background,
+                    borderWidth: 2,
+                    pointRadius: 0, // No points for performance with high-resolution data
+                    pointHoverRadius: 4,
+                    fill: false,
+                    tension: 0.1 // Slight smoothing
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 0 // Disable animations for real-time performance
+                },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        position: 'bottom',
+                        title: {
+                            display: true,
+                            text: 'Position (%)',
+                            color: '#374151',
+                            font: { size: 12, weight: 'bold' }
+                        },
+                        min: 0,
+                        max: 100,
+                        grid: {
+                            color: this.config.colors.grid,
+                            lineWidth: 1
+                        },
+                        ticks: {
+                            color: '#6B7280'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Temperature (°C)',
+                            color: '#374151',
+                            font: { size: 12, weight: 'bold' }
+                        },
+                        grid: {
+                            color: this.config.colors.grid,
+                            lineWidth: 1
+                        },
+                        ticks: {
+                            color: '#6B7280'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false // Hide legend for cleaner look
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#ffffff',
+                        bodyColor: '#ffffff',
+                        borderColor: this.config.colors.line1,
+                        borderWidth: 1
+                    }
+                },
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                elements: {
+                    line: {
+                        tension: 0.1
+                    }
+                }
+            }
         });
     }
     
     createVerticalChart() {
-        const traces = [{
-            x: [], y: [],
-            type: 'scatter', mode: 'lines', // Changed from 'lines+markers' for high-resolution data
-            line: { color: this.config.colors.line2, width: 2 },
-            name: 'Temperature'
-        }];
+        const canvas = this.elements.verticalTemperaturePlot;
+        if (!canvas) {
+            console.error('Vertical chart canvas not found');
+            return;
+        }
         
-        const layout = {
-            title: '',
-            xaxis: { title: 'Temperature (°C)', showgrid: true, gridcolor: this.config.colors.grid },
-            yaxis: { title: 'Position (% from top)', range: [0, 100], autorange: 'reversed', showgrid: true, gridcolor: this.config.colors.grid },
-            height: 420, // Match CSS height exactly for better space utilization
-            margin: { l: 60, r: 40, t: 15, b: 25 }, // Reduced top/bottom margins for more plot area
-            plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
-        };
+        const ctx = canvas.getContext('2d');
         
-        this.plots.vertical = Plotly.newPlot(this.elements.verticalTemperaturePlot, traces, layout, {
-            responsive: true, displayModeBar: true, displaylogo: false,
-            modeBarButtonsToRemove: ['pan2d', 'select2d', 'lasso2d']
+        this.charts.vertical = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [], // Temperature values
+                datasets: [{
+                    label: 'Position',
+                    data: [],
+                    borderColor: this.config.colors.line2,
+                    backgroundColor: this.config.colors.background2,
+                    borderWidth: 2,
+                    pointRadius: 0, // No points for performance with high-resolution data
+                    pointHoverRadius: 4,
+                    fill: false,
+                    tension: 0.1 // Slight smoothing
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                animation: {
+                    duration: 0 // Disable animations for real-time performance
+                },
+                scales: {
+                    x: {
+                        type: 'linear',
+                        position: 'bottom',
+                        title: {
+                            display: true,
+                            text: 'Temperature (°C)',
+                            color: '#374151',
+                            font: { size: 12, weight: 'bold' }
+                        },
+                        grid: {
+                            color: this.config.colors.grid,
+                            lineWidth: 1
+                        },
+                        ticks: {
+                            color: '#6B7280'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Position (% from top)',
+                            color: '#374151',
+                            font: { size: 12, weight: 'bold' }
+                        },
+                        min: 0,
+                        max: 100,
+                        reverse: true, // Reverse Y-axis (top to bottom)
+                        grid: {
+                            color: this.config.colors.grid,
+                            lineWidth: 1
+                        },
+                        ticks: {
+                            color: '#6B7280'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false // Hide legend for cleaner look
+                    },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#ffffff',
+                        bodyColor: '#ffffff',
+                        borderColor: this.config.colors.line2,
+                        borderWidth: 1
+                    }
+                },
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                elements: {
+                    line: {
+                        tension: 0.1
+                    }
+                }
+            }
         });
     }
     
+    /**
+     * Update charts using Chart.js efficient update methods
+     */
     updateHorizontalChart(temperatures) {
-        if (!this.plots.horizontal || !temperatures.length) return;
+        if (!this.charts.horizontal || !temperatures || temperatures.length === 0) return;
         
-        const positions = temperatures.map((_, index) => 
-            Math.round((index / (temperatures.length - 1)) * 100)
-        );
-        
-        Plotly.restyle(this.elements.horizontalTemperaturePlot, {
-            x: [positions], y: [temperatures]
-        }, [0]);
+        try {
+            // Optional decimation for very large datasets
+            const processedTemps = temperatures.length > this.config.maxDisplayPoints 
+                ? this.decimateData(temperatures) 
+                : temperatures;
+            
+            // Generate position labels (X-axis)
+            const positions = processedTemps.map((_, index) => 
+                Math.round((index / (processedTemps.length - 1)) * 100)
+            );
+            
+            // Update chart data efficiently
+            this.charts.horizontal.data.labels = positions;
+            this.charts.horizontal.data.datasets[0].data = processedTemps.map((temp, index) => ({
+                x: positions[index],
+                y: temp
+            }));
+            
+            // Update without animation for real-time performance
+            this.charts.horizontal.update('none');
+            
+        } catch (error) {
+            console.error('Error updating horizontal chart:', error);
+        }
     }
     
     updateVerticalChart(temperatures) {
-        if (!this.plots.vertical || !temperatures.length) return;
+        if (!this.charts.vertical || !temperatures || temperatures.length === 0) return;
         
-        const reversedTemps = [...temperatures].reverse();
-        const positions = reversedTemps.map((_, index) => 
-            Math.round((index / (reversedTemps.length - 1)) * 100)
-        );
-        
-        Plotly.restyle(this.elements.verticalTemperaturePlot, {
-            x: [reversedTemps], y: [positions]
-        }, [0]);
+        try {
+            // Optional decimation for very large datasets
+            const processedTemps = temperatures.length > this.config.maxDisplayPoints 
+                ? this.decimateData(temperatures) 
+                : temperatures;
+            
+            // Generate position labels (Y-axis) - no need to reverse here since Y-axis is reversed
+            const positions = processedTemps.map((_, index) => 
+                Math.round((index / (processedTemps.length - 1)) * 100)
+            );
+            
+            // Update chart data efficiently
+            this.charts.vertical.data.labels = processedTemps;
+            this.charts.vertical.data.datasets[0].data = processedTemps.map((temp, index) => ({
+                x: temp,
+                y: positions[index]
+            }));
+            
+            // Update without animation for real-time performance
+            this.charts.vertical.update('none');
+            
+        } catch (error) {
+            console.error('Error updating vertical chart:', error);
+        }
     }
     
     showError(message) {
@@ -733,18 +989,31 @@ class ThermalIr {
     }
     
     destroy() {
+        // Clear timeouts
+        clearTimeout(this.analysisTimeout);
+        
         // Clean up WebSocket
         if (this.webSocket) {
             this.webSocket.close();
             this.webSocket = null;
         }
         
-        // Clean up Plotly plots
-        if (this.plots.horizontal) {
-            Plotly.purge(this.elements.horizontalTemperaturePlot);
+        // Clean up Chart.js charts
+        if (this.charts.horizontal) {
+            try {
+                this.charts.horizontal.destroy();
+                this.charts.horizontal = null;
+            } catch (e) {
+                console.warn('Error destroying horizontal chart:', e);
+            }
         }
-        if (this.plots.vertical) {
-            Plotly.purge(this.elements.verticalTemperaturePlot);
+        if (this.charts.vertical) {
+            try {
+                this.charts.vertical.destroy();
+                this.charts.vertical = null;
+            } catch (e) {
+                console.warn('Error destroying vertical chart:', e);
+            }
         }
         
         // Clear container

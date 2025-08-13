@@ -1,5 +1,5 @@
 /* ===================================================================== */
-/* THERMAL-IR.CSS - Interactive Thermal Video Analysis with Folding Support */
+/* THERMAL-IR.CSS - Interactive Thermal Video Analysis with Chart.js */
 /* ===================================================================== */
 
 /**
@@ -7,7 +7,7 @@
  * Interactive thermal video analysis with real-time WebSocket integration
  * Layout: Video + vertical chart (top), horizontal chart (bottom)
  * Colors: Fire theme with Schlatter blue accents
- * UPDATED: Uses generic .module-content for folding compatibility
+ * UPDATED: Optimized for Chart.js with canvas elements and reliable sizing
  */
 
 /* === MODULE CONTAINER === */
@@ -275,8 +275,8 @@
     border-radius: var(--border-radius);
     padding: var(--spacing-md);
     transition: all var(--transition-slow);
-    height: 520px; /* Fixed height to better match video area */
-    min-height: 520px; /* Ensure adequate height for chart */
+    display: flex;
+    flex-direction: column;
 }
 
 .horizontal-chart-section {
@@ -288,6 +288,9 @@
     transition: all var(--transition-slow);
     width: 550px; /* Match video container max-width exactly */
     justify-self: start; /* Align to start of grid area */
+    height: 270px; /* Fixed height for consistent layout */
+    display: flex;
+    flex-direction: column;
 }
 
 .foldable-module.collapsed .vertical-chart-section,
@@ -308,6 +311,7 @@
     margin-bottom: var(--spacing-md);
     padding-bottom: var(--spacing-xs);
     border-bottom: 2px solid rgba(var(--schlatter-blue-rgb), 0.1);
+    flex-shrink: 0; /* Prevent header from shrinking */
 }
 
 .section-title {
@@ -347,34 +351,52 @@
     background-color: #059669; /* Green for vertical line */
 }
 
-/* === THERMAL PLOTS === */
-.thermal-plot {
+/* === CHART CONTAINERS - OPTIMIZED FOR CHART.JS === */
+.chart-container {
+    flex: 1; /* Take remaining space after header */
+    position: relative;
     width: 100%;
-    height: 250px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 0; /* Allow flexbox to shrink */
+}
+
+/* === THERMAL PLOTS - CHART.JS CANVAS ELEMENTS === */
+.thermal-plot {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
     border-radius: var(--border-radius-sm);
-    background-color: var(--bg-white);
-    transition: all var(--transition-slow);
+    background-color: transparent;
+    transition: opacity var(--transition-slow);
+    /* Chart.js handles all sizing internally */
 }
 
 .foldable-module.collapsed .thermal-plot {
     opacity: 0 !important;
     pointer-events: none !important;
-    height: 0 !important;
-    min-height: 0 !important;
+    display: none !important;
 }
 
+/* Specific plot sizing - Chart.js will respect these container dimensions */
 .vertical-plot {
-    height: 420px; /* Increased height to better utilize available vertical space */
+    /* Chart.js will create a canvas that fits the container perfectly */
+    min-height: 380px; /* Account for header and info space */
+    height: 380px; /* Fixed height for consistency */
 }
 
 .horizontal-plot {
-    height: 220px; /* Standard height for horizontal chart */
+    /* Chart.js will create a canvas that fits the container perfectly */
+    min-height: 180px; /* Account for header and info space */
+    height: 180px; /* Fixed height for consistency */
 }
 
 .chart-info {
     margin-top: var(--spacing-xs);
     text-align: center;
     transition: all var(--transition-slow);
+    flex-shrink: 0; /* Prevent info from shrinking */
 }
 
 .foldable-module.collapsed .chart-info {
@@ -426,29 +448,60 @@
     font-size: var(--font-lg);
 }
 
-/* === PLOTLY CUSTOMIZATIONS === */
-.thermal-plot .plotly-graph-div {
-    width: 100% !important;
-    height: 100% !important;
-    transition: opacity var(--transition-normal);
+/* === CHART.JS CUSTOMIZATIONS === */
+
+/* Canvas rendering optimization */
+.thermal-plot canvas {
+    image-rendering: pixelated; /* Better performance for high-resolution data */
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
 }
 
-.foldable-module.collapsed .thermal-plot .plotly-graph-div {
-    opacity: 0 !important;
-    pointer-events: none !important;
+/* Ensure Chart.js tooltips appear above other elements */
+.chartjs-tooltip {
+    z-index: 1000 !important;
 }
 
-.thermal-plot .modebar {
-    right: 10px !important;
-    top: 10px !important;
+/* Chart.js responsive container */
+.chartjs-size-monitor {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    overflow: hidden;
+    pointer-events: none;
+    visibility: hidden;
+    z-index: -1;
 }
 
-.thermal-plot .modebar-btn path {
-    fill: var(--schlatter-blue) !important;
-}
-
-.thermal-plot .modebar-btn:hover path {
-    fill: #002A66 !important;
+/* === RESPONSIVE BEHAVIOR FOR CHART.JS === */
+@media (max-width: 768px) {
+    .thermal-sections-container {
+        grid-template-areas: 
+            "video"
+            "vertical-chart"
+            "horizontal";
+        grid-template-columns: 1fr;
+        gap: var(--spacing-md);
+    }
+    
+    .horizontal-chart-section {
+        width: 100%;
+        height: 250px; /* Slightly shorter on mobile */
+    }
+    
+    .vertical-chart-section {
+        height: 400px; /* Maintain good height on mobile */
+    }
+    
+    .vertical-plot {
+        height: 320px; /* Adjust for mobile */
+    }
+    
+    .horizontal-plot {
+        height: 160px; /* Adjust for mobile */
+    }
 }
 
 /* === THERMAL THEME COLORS === */
@@ -474,7 +527,22 @@
         rgba(255, 255, 255, 0.3) 100%);
 }
 
-/* Desktop-only application - no responsive breakpoints needed */
+/* === PERFORMANCE OPTIMIZATIONS === */
+
+/* Reduce repaints during chart updates */
+.thermal-plot {
+    will-change: contents;
+    transform: translateZ(0); /* Force GPU acceleration */
+}
+
+/* Smooth transitions for responsive changes */
+.chart-container {
+    transition: all var(--transition-slow);
+}
+
+.thermal-sections-container {
+    contain: layout; /* Improve layout performance */
+}
 
 /* === PRINT STYLES === */
 @media print {
@@ -488,10 +556,6 @@
         background-color: var(--bg-light) !important;
         color: var(--text-primary) !important;
         border-bottom: 2px solid var(--border-color);
-    }
-    
-    .thermal-plot .modebar {
-        display: none !important;
     }
     
     /* Print: expand all content regardless of fold state */
@@ -512,8 +576,15 @@
     .foldable-module.collapsed .thermal-plot {
         opacity: 1 !important;
         pointer-events: all !important;
-        height: 200px !important;
-        min-height: 200px !important;
+        display: block !important;
+    }
+    
+    .foldable-module.collapsed .vertical-chart-section {
+        height: 400px !important;
+    }
+    
+    .foldable-module.collapsed .horizontal-chart-section {
+        height: 270px !important;
     }
     
     .fold-arrow {
@@ -529,5 +600,44 @@
     :root {
         --thermal-line1: #000000 !important;
         --thermal-line2: #666666 !important;
+    }
+    
+    /* Ensure charts print properly */
+    .thermal-plot {
+        break-inside: avoid;
+    }
+    
+    /* Force Chart.js to render in print mode */
+    .thermal-plot canvas {
+        max-width: 100% !important;
+        height: auto !important;
+    }
+}
+
+/* === ACCESSIBILITY IMPROVEMENTS === */
+
+/* Focus states for interactive elements */
+.thermal-plot:focus {
+    outline: 2px solid var(--schlatter-blue);
+    outline-offset: 2px;
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+    .thermal-plot {
+        border: 1px solid currentColor;
+    }
+    
+    .chart-header {
+        border-bottom-color: currentColor;
+    }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+    .thermal-plot,
+    .chart-container,
+    .thermal-sections-container {
+        transition: none !important;
     }
 }

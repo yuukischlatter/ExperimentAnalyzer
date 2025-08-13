@@ -1,4 +1,4 @@
-<!-- Thermal IR Module Template - Interactive Thermal Video Analysis -->
+<!-- Thermal IR Module Template - Interactive Thermal Video Analysis with Dynamic Values -->
 <div class="thermal-ir-container">
     
     <!-- Module Header (standardized structure for folding) -->
@@ -56,13 +56,16 @@
                             <span data-bind="playButtonText">Play</span>
                         </button>
                         
+                        <!-- DYNAMIC: Frame slider max will be updated by JavaScript -->
                         <input data-bind="frameSlider" id="frame-slider" type="range" 
-                               min="0" max="3674" value="0" class="frame-slider">
+                               min="0" max="0" value="0" class="frame-slider">
                         
                         <div class="frame-info">
-                            <span data-bind="frameInfo" id="frame-info">Frame: 0 / 3674</span>
+                            <!-- DYNAMIC: Frame info updated by JavaScript -->
+                            <span data-bind="frameInfo" id="frame-info">Frame: 0 / 0</span>
+                            <!-- DYNAMIC: Video metadata updated by JavaScript when video loads -->
                             <span data-bind="videoInfo" class="video-metadata text-xs text-muted">
-                                3674 frames, 14.108 FPS, 908x1200
+                                Loading video info...
                             </span>
                         </div>
                     </div>
@@ -80,7 +83,7 @@
                     </div>
                 </div>
                 <div class="chart-container">
-                    <div data-bind="verticalTemperaturePlot" id="vertical-temperature-plot" class="thermal-plot vertical-plot"></div>
+                    <canvas data-bind="verticalTemperaturePlot" id="vertical-temperature-plot" class="thermal-plot vertical-plot"></canvas>
                 </div>
                 <div class="chart-info">
                     <p class="text-xs text-muted">Temperature vs. Position (%)</p>
@@ -97,7 +100,7 @@
                     </div>
                 </div>
                 <div class="chart-container">
-                    <div data-bind="horizontalTemperaturePlot" id="horizontal-temperature-plot" class="thermal-plot horizontal-plot"></div>
+                    <canvas data-bind="horizontalTemperaturePlot" id="horizontal-temperature-plot" class="thermal-plot horizontal-plot"></canvas>
                 </div>
                 <div class="chart-info">
                     <p class="text-xs text-muted">Position (%) vs. Temperature</p>
