@@ -50,7 +50,7 @@ class SummaryService {
         
         try {
             // STEP 1: Check database first for complete summary
-            const cachedSummary = await this.summaryRepository.getCompleteSummaryAsync(experimentId);
+            const cachedSummary = await this.summaryRepository.getSummaryAsync(experimentId);
             if (cachedSummary) {
                 console.log(`✓ Returning cached complete summary for ${experimentId} (~50ms)`);
                 return this._reconstructExperimentSummary(cachedSummary);
