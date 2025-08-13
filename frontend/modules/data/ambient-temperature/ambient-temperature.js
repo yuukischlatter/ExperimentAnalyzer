@@ -2,6 +2,7 @@
  * Ambient Temperature Module
  * Displays temperature CSV data with single-axis plotting focused on temperature measurements
  * Integrates with existing experiment system and follows bin-oscilloscope patterns
+ * UPDATED: Added cleanup and abort functionality
  */
 
 class AmbientTemperature {
@@ -19,6 +20,10 @@ class AmbientTemperature {
         };
         this.elements = {};
         this.plot = null;
+        
+        // NEW: Request management
+        this.abortController = null;
+        this.isLoading = false;
         
         console.log('AmbientTemperature initialized');
         this.init();
@@ -119,11 +124,62 @@ class AmbientTemperature {
     }
     
     /**
-     * Load experiment data (Standard module interface)
+     * NEW: Abort ongoing requests
+     */
+    abort() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        this.isLoading = false;
+        console.log('AmbientTemperature: Ongoing requests aborted');
+    }
+    
+    /**
+     * NEW: Cleanup state without destroying DOM
+     */
+    cleanup() {
+        // Abort any ongoing requests
+        this.abort();
+        
+        // Reset state
+        this.state.experimentId = null;
+        this.state.metadata = null;
+        this.state.plotData = null;
+        this.state.isLoaded = false;
+        this.state.isPlotReady = false;
+        this.state.currentTimeRange = { min: 0, max: 100 };
+        
+        // Clear plot
+        if (this.plot && this.elements.temperaturePlot) {
+            Plotly.purge(this.elements.temperaturePlot);
+            this.plot = null;
+        }
+        
+        // Clear UI
+        this.hideError();
+        this.hidePlot();
+        this.hideLoading();
+        
+        console.log('AmbientTemperature: Cleanup completed');
+    }
+    
+    /**
+     * Load experiment data (Standard module interface) - MODIFIED: Added abort controller support
      * @param {string} experimentId - Experiment ID
      */
     async loadExperiment(experimentId) {
         try {
+            // Prevent overlapping loads
+            if (this.isLoading) {
+                console.log('Already loading temperature data, aborting previous request...');
+                this.abort();
+            }
+            
+            // Create new abort controller
+            this.abortController = new AbortController();
+            this.isLoading = true;
+            
             console.log(`Loading temperature data for experiment: ${experimentId}`);
             
             this.state.experimentId = experimentId;
@@ -137,18 +193,37 @@ class AmbientTemperature {
             // Load metadata first
             await this.loadMetadata();
             
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
+            
             // Load available temperature channels
             await this.loadTemperatureChannelsData();
+            
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
             
             // Create the plot
             await this.createPlot();
             
             this.state.isLoaded = true;
+            this.isLoading = false;
             this.hideLoading();
             
             console.log(`Temperature data loaded successfully for ${experimentId}`);
             
         } catch (error) {
+            this.isLoading = false;
+            
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                console.log('Temperature loading was aborted');
+                return;
+            }
+            
             console.error(`Failed to load experiment ${experimentId}:`, error);
             this.hideLoading();
             this.onError(error);
@@ -156,12 +231,13 @@ class AmbientTemperature {
     }
     
     /**
-     * Load temperature CSV metadata
+     * Load temperature CSV metadata - MODIFIED: Added abort signal support
      */
     async loadMetadata() {
         try {
             const response = await fetch(
-                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/temp-metadata`
+                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/temp-metadata`,
+                { signal: this.abortController.signal }
             );
             
             if (!response.ok) {
@@ -193,7 +269,7 @@ class AmbientTemperature {
     }
     
     /**
-     * Load available temperature channels data
+     * Load available temperature channels data - MODIFIED: Added abort signal support
      */
     async loadTemperatureChannelsData() {
         try {
@@ -218,7 +294,8 @@ class AmbientTemperature {
                         startTime: this.state.currentTimeRange.min,
                         endTime: this.state.currentTimeRange.max,
                         maxPoints: this.config.maxPoints
-                    })
+                    }),
+                    signal: this.abortController.signal
                 }
             );
             
@@ -430,7 +507,7 @@ class AmbientTemperature {
     }
     
     /**
-     * Resample temperature data for new time range
+     * Resample temperature data for new time range - MODIFIED: Added abort signal support
      */
     async resampleDataForTimeRange(startTime, endTime) {
         try {
@@ -439,6 +516,9 @@ class AmbientTemperature {
             const totalDuration = this.state.metadata.timeRange.max - this.state.metadata.timeRange.min;
             const zoomFactor = totalDuration / timespan;
             const maxPoints = Math.min(5000, Math.max(2000, Math.floor(3000 * Math.sqrt(zoomFactor))));
+            
+            // Create abort controller for resampling request
+            const resampleAbortController = new AbortController();
             
             // Get available channels
             const availableChannels = this.state.metadata.channels.available.temperature.map(ch => ch.id);
@@ -455,7 +535,8 @@ class AmbientTemperature {
                         startTime: startTime,
                         endTime: endTime,
                         maxPoints: maxPoints
-                    })
+                    }),
+                    signal: resampleAbortController.signal
                 }
             );
             
@@ -469,6 +550,12 @@ class AmbientTemperature {
             }
             
         } catch (error) {
+            // Don't log abort errors
+            if (error.name === 'AbortError') {
+                console.log('Temperature resampling was aborted');
+                return;
+            }
+            
             console.error('Error resampling temperature data:', error);
         }
     }
@@ -527,7 +614,7 @@ class AmbientTemperature {
         Plotly.relayout(this.elements.temperaturePlot, update);
     }
     
-    // === STATE MANAGEMENT (same as bin-oscilloscope) ===
+    // === STATE MANAGEMENT ===
     
     showLoading() {
         this.hideError();
@@ -617,7 +704,13 @@ class AmbientTemperature {
         }
     }
     
+    /**
+     * Destroy module - MODIFIED: Enhanced cleanup
+     */
     destroy() {
+        // Abort any ongoing requests
+        this.abort();
+        
         // Clean up Plotly plot
         if (this.plot && this.elements.temperaturePlot) {
             Plotly.purge(this.elements.temperaturePlot);
@@ -640,7 +733,8 @@ class AmbientTemperature {
     getState() {
         return {
             ...this.state,
-            config: this.config
+            config: this.config,
+            isLoading: this.isLoading
         };
     }
 }

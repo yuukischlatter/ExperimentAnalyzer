@@ -2,6 +2,7 @@
  * Binary Oscilloscope Module
  * Displays binary oscilloscope data with multi-axis plotting and custom Y-axis scrolling
  * Integrates with existing experiment system and design patterns
+ * UPDATED: Added cleanup and abort functionality
  */
 
 class BinOscilloscope {
@@ -24,6 +25,13 @@ class BinOscilloscope {
         this.axisHoverZones = [];
         this.isAxisHovering = false;
         this.currentAxis = null;
+        
+        // NEW: Request management
+        this.abortController = null;
+        this.isLoading = false;
+        
+        // Event handler binding for proper cleanup
+        this.boundEventHandlers = {};
         
         console.log('BinOscilloscope initialized');
         this.init();
@@ -122,11 +130,66 @@ class BinOscilloscope {
     }
     
     /**
-     * Load experiment data (Standard module interface)
+     * NEW: Abort ongoing requests
+     */
+    abort() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        this.isLoading = false;
+        console.log('BinOscilloscope: Ongoing requests aborted');
+    }
+    
+    /**
+     * NEW: Cleanup state without destroying DOM
+     */
+    cleanup() {
+        // Abort any ongoing requests
+        this.abort();
+        
+        // Reset state
+        this.state.experimentId = null;
+        this.state.metadata = null;
+        this.state.plotData = null;
+        this.state.isLoaded = false;
+        this.state.isPlotReady = false;
+        this.state.currentTimeRange = { min: 0, max: 100 };
+        
+        // Reset axis hovering state
+        this.isAxisHovering = false;
+        this.currentAxis = null;
+        
+        // Clear plot
+        if (this.plot && this.elements.oscilloscopePlot) {
+            Plotly.purge(this.elements.oscilloscopePlot);
+            this.plot = null;
+        }
+        
+        // Clear UI
+        this.hideError();
+        this.hidePlot();
+        this.hideLoading();
+        
+        console.log('BinOscilloscope: Cleanup completed');
+    }
+    
+    /**
+     * Load experiment data (Standard module interface) - MODIFIED: Added abort controller support
      * @param {string} experimentId - Experiment ID
      */
     async loadExperiment(experimentId) {
         try {
+            // Prevent overlapping loads
+            if (this.isLoading) {
+                console.log('Already loading binary oscilloscope data, aborting previous request...');
+                this.abort();
+            }
+            
+            // Create new abort controller
+            this.abortController = new AbortController();
+            this.isLoading = true;
+            
             console.log(`Loading binary data for experiment: ${experimentId}`);
             
             this.state.experimentId = experimentId;
@@ -140,18 +203,37 @@ class BinOscilloscope {
             // Load metadata first
             await this.loadMetadata();
             
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
+            
             // Load default channels data
             await this.loadDefaultChannelsData();
+            
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
             
             // Create the plot
             await this.createPlot();
             
             this.state.isLoaded = true;
+            this.isLoading = false;
             this.hideLoading();
             
             console.log(`Binary data loaded successfully for ${experimentId}`);
             
         } catch (error) {
+            this.isLoading = false;
+            
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                console.log('Binary oscilloscope loading was aborted');
+                return;
+            }
+            
             console.error(`Failed to load experiment ${experimentId}:`, error);
             this.hideLoading();
             this.onError(error);
@@ -159,12 +241,13 @@ class BinOscilloscope {
     }
     
     /**
-     * Load binary file metadata
+     * Load binary file metadata - MODIFIED: Added abort signal support
      */
     async loadMetadata() {
         try {
             const response = await fetch(
-                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/bin-metadata`
+                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/bin-metadata`,
+                { signal: this.abortController.signal }
             );
             
             if (!response.ok) {
@@ -196,7 +279,7 @@ class BinOscilloscope {
     }
     
     /**
-     * Load default engineering channels data
+     * Load default engineering channels data - MODIFIED: Added abort signal support
      */
     async loadDefaultChannelsData() {
         try {
@@ -215,7 +298,8 @@ class BinOscilloscope {
                         startTime: this.state.currentTimeRange.min,
                         endTime: this.state.currentTimeRange.max,
                         maxPoints: this.config.maxPoints
-                    })
+                    }),
+                    signal: this.abortController.signal
                 }
             );
             
@@ -448,7 +532,7 @@ class BinOscilloscope {
     }
     
     /**
-     * Resample data for new time range
+     * Resample data for new time range - MODIFIED: Added abort signal support
      */
     async resampleDataForTimeRange(startTime, endTime) {
         try {
@@ -457,6 +541,9 @@ class BinOscilloscope {
             const totalDuration = this.state.metadata.timeRange.max - this.state.metadata.timeRange.min;
             const zoomFactor = totalDuration / timespan;
             const maxPoints = Math.min(5000, Math.max(2000, Math.floor(3000 * Math.sqrt(zoomFactor))));
+            
+            // Create abort controller for resampling request
+            const resampleAbortController = new AbortController();
             
             // Load data for new time range
             const defaultChannels = ['calc_3', 'calc_4', 'calc_5', 'calc_6'];
@@ -473,7 +560,8 @@ class BinOscilloscope {
                         startTime: startTime,
                         endTime: endTime,
                         maxPoints: maxPoints
-                    })
+                    }),
+                    signal: resampleAbortController.signal
                 }
             );
             
@@ -487,6 +575,12 @@ class BinOscilloscope {
             }
             
         } catch (error) {
+            // Don't log abort errors
+            if (error.name === 'AbortError') {
+                console.log('Binary oscilloscope resampling was aborted');
+                return;
+            }
+            
             console.error('Error resampling data:', error);
         }
     }
@@ -532,15 +626,15 @@ class BinOscilloscope {
     setupAxisScrolling() {
         if (!this.elements.oscilloscopePlot) return;
         
+        // Store bound event handlers for proper cleanup
+        this.boundEventHandlers.axisWheel = (event) => this.handleAxisWheel(event);
+        this.boundEventHandlers.axisHover = (event) => this.handleAxisHover(event);
+        
         // Add mouse wheel event listener to plot container
-        this.elements.oscilloscopePlot.addEventListener('wheel', (event) => {
-            this.handleAxisWheel(event);
-        }, { passive: false });
+        this.elements.oscilloscopePlot.addEventListener('wheel', this.boundEventHandlers.axisWheel, { passive: false });
         
         // Add mouse move event to track axis hovering
-        this.elements.oscilloscopePlot.addEventListener('mousemove', (event) => {
-            this.handleAxisHover(event);
-        });
+        this.elements.oscilloscopePlot.addEventListener('mousemove', this.boundEventHandlers.axisHover);
     }
     
     /**
@@ -729,7 +823,13 @@ class BinOscilloscope {
         }
     }
     
+    /**
+     * Destroy module - MODIFIED: Enhanced cleanup with proper event listener removal
+     */
     destroy() {
+        // Abort any ongoing requests
+        this.abort();
+        
         // Clean up Plotly plot
         if (this.plot && this.elements.oscilloscopePlot) {
             Plotly.purge(this.elements.oscilloscopePlot);
@@ -737,8 +837,12 @@ class BinOscilloscope {
         
         // Remove event listeners
         if (this.elements.oscilloscopePlot) {
-            this.elements.oscilloscopePlot.removeEventListener('wheel', this.handleAxisWheel);
-            this.elements.oscilloscopePlot.removeEventListener('mousemove', this.handleAxisHover);
+            if (this.boundEventHandlers.axisWheel) {
+                this.elements.oscilloscopePlot.removeEventListener('wheel', this.boundEventHandlers.axisWheel);
+            }
+            if (this.boundEventHandlers.axisHover) {
+                this.elements.oscilloscopePlot.removeEventListener('mousemove', this.boundEventHandlers.axisHover);
+            }
         }
         
         // Clear container
@@ -751,6 +855,7 @@ class BinOscilloscope {
         this.state = {};
         this.elements = {};
         this.plot = null;
+        this.boundEventHandlers = {};
         
         console.log('BinOscilloscope destroyed');
     }
@@ -758,7 +863,8 @@ class BinOscilloscope {
     getState() {
         return {
             ...this.state,
-            config: this.config
+            config: this.config,
+            isLoading: this.isLoading
         };
     }
 }

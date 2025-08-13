@@ -2,6 +2,7 @@
  * Experiment Analyzer - Main Application Controller
  * Manages module loading, global state, and inter-module communication
  * UPDATED: Added cleanup and abort functionality for experiment switching
+ * FIXED: Experiment browser now stays loaded when switching experiments
  */
 
 class ExperimentAnalyzer {
@@ -137,8 +138,8 @@ class ExperimentAnalyzer {
         // 1. Abort all ongoing requests
         this.abortAllRequests();
         
-        // 2. Destroy all active modules
-        this.destroyAllModules();
+        // 2. Cleanup all data modules (but keep experiment browser)
+        this.cleanupDataModules();
         
         // 3. Reset module containers
         this.resetModuleContainers();
@@ -174,7 +175,44 @@ class ExperimentAnalyzer {
     }
     
     /**
-     * NEW: Destroy all loaded modules
+     * NEW: Cleanup all data modules (but keep experiment browser) - FIXED
+     */
+    cleanupDataModules() {
+        for (const [name, module] of this.modules) {
+            // SKIP the experiment browser - it should always stay loaded and visible
+            if (name === 'experiment-browser') {
+                continue;
+            }
+            
+            try {
+                if (typeof module.cleanup === 'function') {
+                    module.cleanup();  // Use cleanup instead of destroy
+                } else if (typeof module.destroy === 'function') {
+                    module.destroy();  // Fallback to destroy if cleanup doesn't exist
+                }
+            } catch (error) {
+                console.error(`Error cleaning up module ${name}:`, error);
+            }
+        }
+        
+        // Remove all modules from the map EXCEPT experiment-browser
+        const experimentBrowser = this.modules.get('experiment-browser');
+        this.modules.clear();
+        
+        if (experimentBrowser) {
+            this.modules.set('experiment-browser', experimentBrowser);
+            this.state.loadedModules = ['experiment-browser'];
+        } else {
+            this.state.loadedModules = [];
+        }
+        
+        this.state.activeModules = [];
+        
+        console.log('All data modules cleaned up (experiment browser preserved)');
+    }
+    
+    /**
+     * NEW: Destroy all loaded modules (for app shutdown only)
      */
     destroyAllModules() {
         for (const [name, module] of this.modules) {
@@ -744,7 +782,7 @@ class ExperimentAnalyzer {
         // Abort all requests
         this.abortAllRequests();
         
-        // Destroy all modules
+        // Destroy all modules (including experiment browser on app shutdown)
         this.destroyAllModules();
         
         console.log('Application cleanup completed');

@@ -2,6 +2,7 @@
  * Acceleration Module
  * Displays 3-axis acceleration CSV data (X=Red, Y=Green, Z=Blue)
  * Simple implementation following distance-sensor pattern
+ * UPDATED: Added cleanup and abort functionality
  */
 
 class Acceleration {
@@ -19,6 +20,10 @@ class Acceleration {
         };
         this.elements = {};
         this.plot = null;
+        
+        // NEW: Request management
+        this.abortController = null;
+        this.isLoading = false;
         
         console.log('Acceleration initialized');
         this.init();
@@ -115,11 +120,62 @@ class Acceleration {
     }
     
     /**
-     * Load experiment data (Standard module interface)
+     * NEW: Abort ongoing requests
+     */
+    abort() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        this.isLoading = false;
+        console.log('Acceleration: Ongoing requests aborted');
+    }
+    
+    /**
+     * NEW: Cleanup state without destroying DOM
+     */
+    cleanup() {
+        // Abort any ongoing requests
+        this.abort();
+        
+        // Reset state
+        this.state.experimentId = null;
+        this.state.metadata = null;
+        this.state.plotData = null;
+        this.state.isLoaded = false;
+        this.state.isPlotReady = false;
+        this.state.currentTimeRange = { min: 0, max: 100 };
+        
+        // Clear plot
+        if (this.plot && this.elements.accelerationPlot) {
+            Plotly.purge(this.elements.accelerationPlot);
+            this.plot = null;
+        }
+        
+        // Clear UI
+        this.hideError();
+        this.hidePlot();
+        this.hideLoading();
+        
+        console.log('Acceleration: Cleanup completed');
+    }
+    
+    /**
+     * Load experiment data (Standard module interface) - MODIFIED: Added abort controller support
      * @param {string} experimentId - Experiment ID
      */
     async loadExperiment(experimentId) {
         try {
+            // Prevent overlapping loads
+            if (this.isLoading) {
+                console.log('Already loading acceleration data, aborting previous request...');
+                this.abort();
+            }
+            
+            // Create new abort controller
+            this.abortController = new AbortController();
+            this.isLoading = true;
+            
             console.log(`Loading acceleration data for experiment: ${experimentId}`);
             
             this.state.experimentId = experimentId;
@@ -133,18 +189,37 @@ class Acceleration {
             // Load metadata first
             await this.loadMetadata();
             
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
+            
             // Load acceleration channel data (X, Y, Z)
             await this.loadAccelerationChannelData();
+            
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
             
             // Create the plot
             await this.createPlot();
             
             this.state.isLoaded = true;
+            this.isLoading = false;
             this.hideLoading();
             
             console.log(`Acceleration data loaded successfully for ${experimentId}`);
             
         } catch (error) {
+            this.isLoading = false;
+            
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                console.log('Acceleration loading was aborted');
+                return;
+            }
+            
             console.error(`Failed to load experiment ${experimentId}:`, error);
             this.hideLoading();
             this.onError(error);
@@ -152,12 +227,13 @@ class Acceleration {
     }
     
     /**
-     * Load acceleration CSV metadata
+     * Load acceleration CSV metadata - MODIFIED: Added abort signal support
      */
     async loadMetadata() {
         try {
             const response = await fetch(
-                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/acc-metadata`
+                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/acc-metadata`,
+                { signal: this.abortController.signal }
             );
             
             if (!response.ok) {
@@ -192,7 +268,7 @@ class Acceleration {
     }
     
     /**
-     * Load acceleration channel data (3 channels: acc_x, acc_y, acc_z)
+     * Load acceleration channel data (3 channels: acc_x, acc_y, acc_z) - MODIFIED: Added abort signal support
      */
     async loadAccelerationChannelData() {
         try {
@@ -214,7 +290,8 @@ class Acceleration {
                         startTime: this.state.currentTimeRange.min * 1000000,  // Convert to µs
                         endTime: this.state.currentTimeRange.max * 1000000,
                         maxPoints: this.config.maxPoints
-                    })
+                    }),
+                    signal: this.abortController.signal
                 }
             );
             
@@ -448,7 +525,7 @@ class Acceleration {
     }
     
     /**
-     * Resample acceleration data for new time range
+     * Resample acceleration data for new time range - MODIFIED: Added abort signal support
      */
     async resampleDataForTimeRange(startTime, endTime) {
         try {
@@ -470,6 +547,9 @@ class Acceleration {
             
             console.log(`Resampling acceleration data: ${validStartTime.toFixed(3)}s - ${validEndTime.toFixed(3)}s, ${maxPoints} points`);
             
+            // Create abort controller for resampling request
+            const resampleAbortController = new AbortController();
+            
             // Resample all 3 channels
             const channelIds = ['acc_x', 'acc_y', 'acc_z'];
             const response = await fetch(
@@ -485,7 +565,8 @@ class Acceleration {
                         startTime: validStartTime * 1000000,  // Convert to microseconds
                         endTime: validEndTime * 1000000,
                         maxPoints: maxPoints
-                    })
+                    }),
+                    signal: resampleAbortController.signal
                 }
             );
             
@@ -541,6 +622,12 @@ class Acceleration {
             }
             
         } catch (error) {
+            // Don't log abort errors
+            if (error.name === 'AbortError') {
+                console.log('Acceleration resampling was aborted');
+                return;
+            }
+            
             console.error('Error resampling acceleration data:', error);
         }
     }
@@ -654,7 +741,13 @@ class Acceleration {
         }
     }
     
+    /**
+     * Destroy module - MODIFIED: Enhanced cleanup
+     */
     destroy() {
+        // Abort any ongoing requests
+        this.abort();
+        
         // Clean up Plotly plot
         if (this.plot && this.elements.accelerationPlot) {
             Plotly.purge(this.elements.accelerationPlot);
@@ -677,7 +770,8 @@ class Acceleration {
     getState() {
         return {
             ...this.state,
-            config: this.config
+            config: this.config,
+            isLoading: this.isLoading
         };
     }
 }

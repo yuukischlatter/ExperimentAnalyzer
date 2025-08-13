@@ -5,6 +5,7 @@
  * Features: Warm/Cold comparison, Top view geometry, Calculated AD values
  * UPDATED: Added complete rail structure to side views matching Python implementation
  * UPDATED: Higher DPI rendering and removed Excel cell references
+ * UPDATED: Added cleanup and abort functionality
  */
 
 class CrownMeasurements {
@@ -25,6 +26,10 @@ class CrownMeasurements {
             coldCrownPlot: null,
             topViewPlot: null
         };
+        
+        // NEW: Request management
+        this.abortController = null;
+        this.isLoading = false;
         
         console.log('CrownMeasurements initialized');
         this.init();
@@ -126,11 +131,74 @@ class CrownMeasurements {
     }
     
     /**
-     * Load experiment data (Standard module interface)
+     * NEW: Abort ongoing requests
+     */
+    abort() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        this.isLoading = false;
+        console.log('CrownMeasurements: Ongoing requests aborted');
+    }
+    
+    /**
+     * NEW: Cleanup state without destroying DOM
+     */
+    cleanup() {
+        // Abort any ongoing requests
+        this.abort();
+        
+        // Reset state
+        this.state.experimentId = null;
+        this.state.metadata = null;
+        this.state.channelData = null;
+        this.state.isLoaded = false;
+        this.state.areSectionsReady = false;
+        
+        // Clear all plots
+        Object.values(this.plots).forEach(plot => {
+            if (plot) {
+                const plotElement = plot._fullLayout?._container || plot.parentNode;
+                if (plotElement) {
+                    Plotly.purge(plotElement);
+                }
+            }
+        });
+        
+        this.plots = {
+            warmCrownPlot: null,
+            coldCrownPlot: null,
+            topViewPlot: null
+        };
+        
+        // Clear calculated values display
+        this.clearCalculatedValues();
+        
+        // Clear UI
+        this.hideError();
+        this.hideSections();
+        this.hideLoading();
+        
+        console.log('CrownMeasurements: Cleanup completed');
+    }
+    
+    /**
+     * Load experiment data (Standard module interface) - MODIFIED: Added abort controller support
      * @param {string} experimentId - Experiment ID
      */
     async loadExperiment(experimentId) {
         try {
+            // Prevent overlapping loads
+            if (this.isLoading) {
+                console.log('Already loading crown measurement data, aborting previous request...');
+                this.abort();
+            }
+            
+            // Create new abort controller
+            this.abortController = new AbortController();
+            this.isLoading = true;
+            
             console.log(`Loading crown measurement data for experiment: ${experimentId}`);
             
             this.state.experimentId = experimentId;
@@ -144,18 +212,37 @@ class CrownMeasurements {
             // Load metadata first
             await this.loadCrownMetadata();
             
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
+            
             // Load all four channel data types
             await this.loadAllChannelData();
+            
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
             
             // Create all visualizations (3 plots + 1 calculated display)
             await this.createAllVisualizations();
             
             this.state.isLoaded = true;
+            this.isLoading = false;
             this.hideLoading();
             
             console.log(`Crown measurement data loaded successfully for ${experimentId}`);
             
         } catch (error) {
+            this.isLoading = false;
+            
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                console.log('Crown measurement loading was aborted');
+                return;
+            }
+            
             console.error(`Failed to load experiment ${experimentId}:`, error);
             this.hideLoading();
             this.onError(error);
@@ -163,12 +250,13 @@ class CrownMeasurements {
     }
     
     /**
-     * Load crown measurement metadata
+     * Load crown measurement metadata - MODIFIED: Added abort signal support
      */
     async loadCrownMetadata() {
         try {
             const response = await fetch(
-                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/crown-metadata`
+                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/crown-metadata`,
+                { signal: this.abortController.signal }
             );
             
             if (!response.ok) {
@@ -214,7 +302,7 @@ class CrownMeasurements {
     }
     
     /**
-     * Load all four channel data types
+     * Load all four channel data types - MODIFIED: Added abort signal support
      */
     async loadAllChannelData() {
         try {
@@ -232,7 +320,8 @@ class CrownMeasurements {
                     body: JSON.stringify({
                         channelIds: ['crown_warm_side', 'crown_cold_side', 'crown_top_view', 'crown_calculated'],
                         maxPoints: this.config.maxPoints
-                    })
+                    }),
+                    signal: this.abortController.signal
                 }
             );
             
@@ -910,6 +999,26 @@ class CrownMeasurements {
     }
     
     /**
+     * NEW: Clear all calculated values display
+     */
+    clearCalculatedValues() {
+        const valueElements = [
+            'höhenversatzValue', 'crownValue', 'seitenversatzKopfAValue', 'seitenversatzFussAValue',
+            'seitenversatzKopfBValue', 'seitenversatzFussBValue', 'pfeilungAValue', 'pfeilungBValue',
+            'inletColdValue', 'inletWarmValue', 'inletDifferenceValue',
+            'outletColdValue', 'outletWarmValue', 'outletDifferenceValue'
+        ];
+        
+        valueElements.forEach(elementName => {
+            const element = this.elements[elementName];
+            if (element) {
+                element.textContent = '--';
+                element.classList.remove('missing-value');
+            }
+        });
+    }
+    
+    /**
      * Create Plotly configuration for plots
      */
     createPlotConfig(plotType) {
@@ -1027,7 +1136,13 @@ class CrownMeasurements {
         }
     }
     
+    /**
+     * Destroy module - MODIFIED: Enhanced cleanup
+     */
     destroy() {
+        // Abort any ongoing requests
+        this.abort();
+        
         // Clean up all Plotly plots
         Object.values(this.plots).forEach(plot => {
             if (plot) {
@@ -1055,7 +1170,8 @@ class CrownMeasurements {
     getState() {
         return {
             ...this.state,
-            config: this.config
+            config: this.config,
+            isLoading: this.isLoading
         };
     }
     
