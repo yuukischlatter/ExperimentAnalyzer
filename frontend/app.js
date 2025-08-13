@@ -1,7 +1,7 @@
 /**
  * Experiment Analyzer - Main Application Controller
  * Manages module loading, global state, and inter-module communication
- * UPDATED: Added thermal-ir module integration
+ * UPDATED: Added cleanup and abort functionality for experiment switching
  */
 
 class ExperimentAnalyzer {
@@ -10,6 +10,12 @@ class ExperimentAnalyzer {
         this.currentExperiment = null;
         this.apiBaseUrl = window.location.origin + '/api';
         this.isInitialized = false;
+        
+        // NEW: Request and loading management
+        this.activeAbortControllers = new Map();
+        this.currentExperimentLoadAbort = null;
+        this.isLoadingExperiment = false;
+        this.moduleLoadPromises = new Map();
         
         // Application state
         this.state = {
@@ -123,9 +129,117 @@ class ExperimentAnalyzer {
     }
     
     /**
-     * Load a module dynamically
+     * NEW: Cleanup current experiment and all active operations
      */
-    async loadModule(moduleName, containerId, config = {}) {
+    cleanupCurrentExperiment() {
+        console.log('Cleaning up current experiment...');
+        
+        // 1. Abort all ongoing requests
+        this.abortAllRequests();
+        
+        // 2. Destroy all active modules
+        this.destroyAllModules();
+        
+        // 3. Reset module containers
+        this.resetModuleContainers();
+        
+        // 4. Clear current experiment state
+        this.currentExperiment = null;
+        this.state.currentExperiment = null;
+        
+        console.log('Current experiment cleanup completed');
+    }
+    
+    /**
+     * NEW: Abort all active requests
+     */
+    abortAllRequests() {
+        // Abort current experiment loading if active
+        if (this.currentExperimentLoadAbort) {
+            this.currentExperimentLoadAbort.abort();
+            this.currentExperimentLoadAbort = null;
+        }
+        
+        // Abort all tracked controllers
+        for (const [key, controller] of this.activeAbortControllers) {
+            try {
+                controller.abort();
+            } catch (error) {
+                console.warn(`Error aborting controller ${key}:`, error);
+            }
+        }
+        
+        this.activeAbortControllers.clear();
+        console.log('All active requests aborted');
+    }
+    
+    /**
+     * NEW: Destroy all loaded modules
+     */
+    destroyAllModules() {
+        for (const [name, module] of this.modules) {
+            try {
+                if (typeof module.destroy === 'function') {
+                    module.destroy();
+                }
+            } catch (error) {
+                console.error(`Error destroying module ${name}:`, error);
+            }
+        }
+        
+        this.modules.clear();
+        this.state.loadedModules = [];
+        this.state.activeModules = [];
+        
+        console.log('All modules destroyed');
+    }
+    
+    /**
+     * NEW: Reset all module containers to hidden state
+     */
+    resetModuleContainers() {
+        // Hide summary container
+        const summaryContainer = document.getElementById('experiment-summary-container');
+        if (summaryContainer) {
+            summaryContainer.classList.add('hidden');
+            summaryContainer.innerHTML = '';
+        }
+        
+        // Hide data modules container
+        const dataContainer = document.getElementById('data-modules-container');
+        if (dataContainer) {
+            dataContainer.classList.add('hidden');
+        }
+        
+        // Reset all individual module containers
+        const moduleContainers = [
+            'bin-oscilloscope-container',
+            'ambient-temperature-container', 
+            'acceleration-container',
+            'distance-sensor-container',
+            'tensile-strength-container',
+            'photo-gallery-container',
+            'thermal-ir-container',
+            'tcp5-oscilloscope-container',
+            'weld-journal-container',
+            'crown-measurements-container'
+        ];
+        
+        moduleContainers.forEach(containerId => {
+            const container = document.getElementById(containerId);
+            if (container) {
+                container.classList.add('hidden');
+                container.innerHTML = '';
+            }
+        });
+        
+        console.log('Module containers reset');
+    }
+    
+    /**
+     * Load a module dynamically - MODIFIED: Added abort signal support
+     */
+    async loadModule(moduleName, containerId, config = {}, abortSignal = null) {
         try {
             console.log(`Loading module: ${moduleName}`);
             
@@ -135,11 +249,21 @@ class ExperimentAnalyzer {
                 return this.modules.get(moduleName);
             }
             
+            // Check if loading was aborted
+            if (abortSignal && abortSignal.aborted) {
+                throw new Error('Module loading aborted');
+            }
+            
             // Determine module path based on type
             const modulePath = this.getModulePath(moduleName);
             
             // Load module files
-            await this.loadModuleFiles(modulePath, moduleName);
+            await this.loadModuleFiles(modulePath, moduleName, abortSignal);
+            
+            // Check abort again after async operation
+            if (abortSignal && abortSignal.aborted) {
+                throw new Error('Module loading aborted');
+            }
             
             // Get module class name (convert kebab-case to PascalCase)
             const className = this.getModuleClassName(moduleName);
@@ -166,6 +290,12 @@ class ExperimentAnalyzer {
             }
             
         } catch (error) {
+            // Don't log abort errors as real errors
+            if (error.name === 'AbortError' || error.message.includes('aborted')) {
+                console.log(`Module loading aborted: ${moduleName}`);
+                return null;
+            }
+            
             console.error(`Failed to load module ${moduleName}:`, error);
             throw error;
         }
@@ -226,42 +356,56 @@ class ExperimentAnalyzer {
     }
     
     /**
-     * Load module files (HTML, CSS, JS)
+     * Load module files (HTML, CSS, JS) - MODIFIED: Added abort signal support
      */
-    async loadModuleFiles(modulePath, moduleName) {
+    async loadModuleFiles(modulePath, moduleName, abortSignal = null) {
         const promises = [];
         
         // Load CSS first
-        promises.push(this.loadCSS(`${modulePath}/${moduleName}.css`));
+        promises.push(this.loadCSS(`${modulePath}/${moduleName}.css`, abortSignal));
         
         // Load HTML template
-        promises.push(this.loadHTML(`${modulePath}/${moduleName}.html`));
+        promises.push(this.loadHTML(`${modulePath}/${moduleName}.html`, abortSignal));
         
         // Load JavaScript last
-        promises.push(this.loadScript(`${modulePath}/${moduleName}.js`));
+        promises.push(this.loadScript(`${modulePath}/${moduleName}.js`, abortSignal));
         
         await Promise.all(promises);
     }
     
     /**
-     * Load CSS file
+     * Load CSS file - MODIFIED: Added abort signal support
      */
-    loadCSS(url) {
+    loadCSS(url, abortSignal = null) {
         return new Promise((resolve, reject) => {
+            if (abortSignal && abortSignal.aborted) {
+                reject(new Error('CSS loading aborted'));
+                return;
+            }
+            
             const link = document.createElement('link');
             link.rel = 'stylesheet';
             link.href = url;
             link.onload = resolve;
             link.onerror = () => reject(new Error(`Failed to load CSS: ${url}`));
+            
+            // Handle abort
+            if (abortSignal) {
+                abortSignal.addEventListener('abort', () => {
+                    link.remove();
+                    reject(new Error('CSS loading aborted'));
+                });
+            }
+            
             document.head.appendChild(link);
         });
     }
     
     /**
-     * Load HTML template (store in window for module access)
+     * Load HTML template - MODIFIED: Added abort signal support
      */
-    async loadHTML(url) {
-        const response = await fetch(url);
+    async loadHTML(url, abortSignal = null) {
+        const response = await fetch(url, { signal: abortSignal });
         if (!response.ok) {
             throw new Error(`Failed to load HTML: ${url}`);
         }
@@ -273,21 +417,34 @@ class ExperimentAnalyzer {
     }
     
     /**
-     * Load JavaScript file
+     * Load JavaScript file - MODIFIED: Added abort signal support
      */
-    loadScript(url) {
+    loadScript(url, abortSignal = null) {
         return new Promise((resolve, reject) => {
+            if (abortSignal && abortSignal.aborted) {
+                reject(new Error('Script loading aborted'));
+                return;
+            }
+            
             const script = document.createElement('script');
             script.src = url;
             script.onload = resolve;
             script.onerror = () => reject(new Error(`Failed to load script: ${url}`));
+            
+            // Handle abort
+            if (abortSignal) {
+                abortSignal.addEventListener('abort', () => {
+                    script.remove();
+                    reject(new Error('Script loading aborted'));
+                });
+            }
+            
             document.body.appendChild(script);
         });
     }
     
     /**
-     * Handle experiment selection from browser module
-     * UPDATED: Load summary module first, then data modules
+     * Handle experiment selection from browser module - MODIFIED: Added cleanup
      */
     async handleExperimentSelected(event) {
         try {
@@ -295,18 +452,38 @@ class ExperimentAnalyzer {
             
             console.log(`Experiment selected: ${experimentId}`);
             
+            // NEW: Check if already loading an experiment
+            if (this.isLoadingExperiment) {
+                console.log('Already loading an experiment, cleaning up first...');
+            }
+            
+            // NEW: Cleanup current experiment first
+            this.cleanupCurrentExperiment();
+            
+            // NEW: Create abort controller for this experiment load
+            this.currentExperimentLoadAbort = new AbortController();
+            this.isLoadingExperiment = true;
+            
             // Update current experiment
             this.currentExperiment = { experimentId, experiment, metadata };
             this.state.currentExperiment = this.currentExperiment;
             
             // STEP 1: Load and show experiment summary module FIRST
-            await this.loadExperimentSummary(experimentId);
+            await this.loadExperimentSummary(experimentId, this.currentExperimentLoadAbort.signal);
+            
+            // Check if aborted
+            if (this.currentExperimentLoadAbort.signal.aborted) {
+                return;
+            }
             
             // STEP 2: Show data modules container
             this.showDataModules();
             
             // STEP 3: Load data modules based on available files
-            await this.loadDataModulesForExperiment(experiment);
+            await this.loadDataModulesForExperiment(experiment, this.currentExperimentLoadAbort.signal);
+            
+            // Mark loading complete
+            this.isLoadingExperiment = false;
             
             // Update URL (optional)
             if (history.pushState) {
@@ -314,6 +491,14 @@ class ExperimentAnalyzer {
             }
             
         } catch (error) {
+            this.isLoadingExperiment = false;
+            
+            // Don't show errors for aborted operations
+            if (error.name === 'AbortError' || error.message.includes('aborted')) {
+                console.log('Experiment loading was aborted');
+                return;
+            }
+            
             console.error('Error handling experiment selection:', error);
             this.handleModuleError({
                 detail: {
@@ -326,9 +511,9 @@ class ExperimentAnalyzer {
     }
     
     /**
-     * Load and initialize experiment summary module
+     * Load and initialize experiment summary module - MODIFIED: Added abort signal
      */
-    async loadExperimentSummary(experimentId) {
+    async loadExperimentSummary(experimentId, abortSignal) {
         try {
             console.log(`Loading experiment summary for: ${experimentId}`);
             
@@ -339,7 +524,12 @@ class ExperimentAnalyzer {
                 experimentId: experimentId,
                 experiment: this.currentExperiment.experiment,
                 metadata: this.currentExperiment.metadata
-            });
+            }, abortSignal);
+            
+            // Check if aborted
+            if (abortSignal && abortSignal.aborted) {
+                return;
+            }
             
             // Show the summary container
             const container = document.getElementById(containerId);
@@ -355,6 +545,11 @@ class ExperimentAnalyzer {
             console.log(`Experiment summary loaded successfully for ${experimentId}`);
             
         } catch (error) {
+            // Don't log abort errors
+            if (error.name === 'AbortError' || error.message.includes('aborted')) {
+                return;
+            }
+            
             console.error(`Failed to load experiment summary for ${experimentId}:`, error);
             
             // Don't fail the entire loading process - summary is helpful but not critical
@@ -364,10 +559,9 @@ class ExperimentAnalyzer {
     }
     
     /**
-     * Load data modules based on experiment file availability
-     * UPDATED: Added thermal-ir module mapping
+     * Load data modules based on experiment file availability - MODIFIED: Added abort signal
      */
-    async loadDataModulesForExperiment(experiment) {
+    async loadDataModulesForExperiment(experiment, abortSignal) {
         const moduleMap = {
             'hasAccelerationCsv': 'acceleration',
             'hasPositionCsv': 'distance-sensor',
@@ -392,7 +586,12 @@ class ExperimentAnalyzer {
                     experimentId: this.currentExperiment.experimentId,
                     experiment: this.currentExperiment.experiment,
                     metadata: this.currentExperiment.metadata
-                }).then(module => {
+                }, abortSignal).then(module => {
+                    // Check if aborted
+                    if (abortSignal && abortSignal.aborted) {
+                        return;
+                    }
+                    
                     // Show the module container
                     const container = document.getElementById(containerId);
                     if (container) {
@@ -404,6 +603,11 @@ class ExperimentAnalyzer {
                         return module.loadExperiment(this.currentExperiment.experimentId);
                     }
                 }).catch(error => {
+                    // Don't log abort errors
+                    if (error.name === 'AbortError' || error.message.includes('aborted')) {
+                        return;
+                    }
+                    
                     console.error(`Failed to load ${moduleName}:`, error);
                     // Don't fail the entire loading process for individual modules
                 });
@@ -534,21 +738,15 @@ class ExperimentAnalyzer {
     }
     
     /**
-     * Cleanup on page unload
+     * Cleanup on page unload - MODIFIED: Enhanced cleanup
      */
     cleanup() {
-        // Destroy all modules
-        for (const [name, module] of this.modules) {
-            try {
-                if (typeof module.destroy === 'function') {
-                    module.destroy();
-                }
-            } catch (error) {
-                console.error(`Error destroying module ${name}:`, error);
-            }
-        }
+        // Abort all requests
+        this.abortAllRequests();
         
-        this.modules.clear();
+        // Destroy all modules
+        this.destroyAllModules();
+        
         console.log('Application cleanup completed');
     }
     
@@ -559,7 +757,8 @@ class ExperimentAnalyzer {
         return {
             ...this.state,
             modulesLoaded: Array.from(this.modules.keys()),
-            isInitialized: this.isInitialized
+            isInitialized: this.isInitialized,
+            isLoadingExperiment: this.isLoadingExperiment
         };
     }
 }

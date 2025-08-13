@@ -2,6 +2,7 @@
  * Distance Sensor Module
  * Displays position CSV data with single-axis plotting focused on laser displacement measurements
  * Integrates with position CSV backend service and follows existing module patterns
+ * UPDATED: Added cleanup and abort functionality
  */
 
 class DistanceSensor {
@@ -19,6 +20,10 @@ class DistanceSensor {
         };
         this.elements = {};
         this.plot = null;
+        
+        // NEW: Request management
+        this.abortController = null;
+        this.isLoading = false;
         
         console.log('DistanceSensor initialized');
         this.init();
@@ -115,11 +120,62 @@ class DistanceSensor {
     }
     
     /**
-     * Load experiment data (Standard module interface)
+     * NEW: Abort ongoing requests
+     */
+    abort() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        this.isLoading = false;
+        console.log('DistanceSensor: Ongoing requests aborted');
+    }
+    
+    /**
+     * NEW: Cleanup state without destroying DOM
+     */
+    cleanup() {
+        // Abort any ongoing requests
+        this.abort();
+        
+        // Reset state
+        this.state.experimentId = null;
+        this.state.metadata = null;
+        this.state.plotData = null;
+        this.state.isLoaded = false;
+        this.state.isPlotReady = false;
+        this.state.currentTimeRange = { min: 0, max: 100 };
+        
+        // Clear plot
+        if (this.plot && this.elements.distancePlot) {
+            Plotly.purge(this.elements.distancePlot);
+            this.plot = null;
+        }
+        
+        // Clear UI
+        this.hideError();
+        this.hidePlot();
+        this.hideLoading();
+        
+        console.log('DistanceSensor: Cleanup completed');
+    }
+    
+    /**
+     * Load experiment data (Standard module interface) - MODIFIED: Added abort controller support
      * @param {string} experimentId - Experiment ID
      */
     async loadExperiment(experimentId) {
         try {
+            // Prevent overlapping loads
+            if (this.isLoading) {
+                console.log('Already loading distance sensor data, aborting previous request...');
+                this.abort();
+            }
+            
+            // Create new abort controller
+            this.abortController = new AbortController();
+            this.isLoading = true;
+            
             console.log(`Loading distance sensor data for experiment: ${experimentId}`);
             
             this.state.experimentId = experimentId;
@@ -133,18 +189,37 @@ class DistanceSensor {
             // Load metadata first
             await this.loadMetadata();
             
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
+            
             // Load position channel data (pos_x)
             await this.loadPositionChannelData();
+            
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
             
             // Create the plot
             await this.createPlot();
             
             this.state.isLoaded = true;
+            this.isLoading = false;
             this.hideLoading();
             
             console.log(`Distance sensor data loaded successfully for ${experimentId}`);
             
         } catch (error) {
+            this.isLoading = false;
+            
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                console.log('Distance sensor loading was aborted');
+                return;
+            }
+            
             console.error(`Failed to load experiment ${experimentId}:`, error);
             this.hideLoading();
             this.onError(error);
@@ -152,12 +227,13 @@ class DistanceSensor {
     }
     
     /**
-     * Load position CSV metadata
+     * Load position CSV metadata - MODIFIED: Added abort signal support
      */
     async loadMetadata() {
         try {
             const response = await fetch(
-                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/pos-metadata`
+                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/pos-metadata`,
+                { signal: this.abortController.signal }
             );
             
             if (!response.ok) {
@@ -193,65 +269,66 @@ class DistanceSensor {
     }
     
     /**
- * Load position channel data (single channel: pos_x)
- */
-async loadPositionChannelData() {
-    try {
-        const channelId = 'pos_x';  // Single channel for position data
-        
-        console.log(`Loading position channel: ${channelId}`);
-        
-        const response = await fetch(
-            `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/pos-data/${channelId}?` +
-            `start=${this.state.currentTimeRange.min * 1000000}&` +  // Convert back to µs
-            `end=${this.state.currentTimeRange.max * 1000000}&` +
-            `maxPoints=${this.config.maxPoints}`,
-            {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json'
+     * Load position channel data (single channel: pos_x) - MODIFIED: Added abort signal support
+     */
+    async loadPositionChannelData() {
+        try {
+            const channelId = 'pos_x';  // Single channel for position data
+            
+            console.log(`Loading position channel: ${channelId}`);
+            
+            const response = await fetch(
+                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/pos-data/${channelId}?` +
+                `start=${this.state.currentTimeRange.min * 1000000}&` +  // Convert back to µs
+                `end=${this.state.currentTimeRange.max * 1000000}&` +
+                `maxPoints=${this.config.maxPoints}`,
+                {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
+                    },
+                    signal: this.abortController.signal
                 }
+            );
+            
+            if (!response.ok) {
+                throw new Error(`Failed to load position channel data: ${response.status}`);
             }
-        );
-        
-        if (!response.ok) {
-            throw new Error(`Failed to load position channel data: ${response.status}`);
-        }
-        
-        const result = await response.json();
-        if (!result.success) {
-            throw new Error(result.error || 'Failed to load position channel data');
-        }
-        
-        // FIXED: The API response has nested structure: result.data.data.time
-        const apiData = result.data.data || result.data; // Handle both structures
-        const apiMetadata = result.data.metadata || result.metadata;
-        
-        if (!apiData.time || !Array.isArray(apiData.time)) {
-            throw new Error('Invalid API response: missing time data array');
-        }
-        
-        // Convert time data from microseconds to seconds for plotting
-        const timeInSeconds = apiData.time.map(t => t / 1000000);
-        
-        this.state.plotData = {
-            pos_x: {
-                success: true,
-                data: {
-                    time: timeInSeconds,
-                    values: apiData.values
-                },
-                metadata: apiMetadata
+            
+            const result = await response.json();
+            if (!result.success) {
+                throw new Error(result.error || 'Failed to load position channel data');
             }
-        };
-        
-        console.log(`Loaded position channel successfully: ${apiData.time.length} points`);
-        
-    } catch (error) {
-        console.error('Position channel loading error details:', error);
-        throw new Error(`Position channel data loading failed: ${error.message}`);
+            
+            // FIXED: The API response has nested structure: result.data.data.time
+            const apiData = result.data.data || result.data; // Handle both structures
+            const apiMetadata = result.data.metadata || result.metadata;
+            
+            if (!apiData.time || !Array.isArray(apiData.time)) {
+                throw new Error('Invalid API response: missing time data array');
+            }
+            
+            // Convert time data from microseconds to seconds for plotting
+            const timeInSeconds = apiData.time.map(t => t / 1000000);
+            
+            this.state.plotData = {
+                pos_x: {
+                    success: true,
+                    data: {
+                        time: timeInSeconds,
+                        values: apiData.values
+                    },
+                    metadata: apiMetadata
+                }
+            };
+            
+            console.log(`Loaded position channel successfully: ${apiData.time.length} points`);
+            
+        } catch (error) {
+            console.error('Position channel loading error details:', error);
+            throw new Error(`Position channel data loading failed: ${error.message}`);
+        }
     }
-}
     
     /**
      * Create Plotly distance plot
@@ -431,101 +508,111 @@ async loadPositionChannelData() {
         }
     }
     
-/**
- * Resample position data for new time range
- */
-async resampleDataForTimeRange(startTime, endTime) {
-    try {
-        // Validate time range - don't allow negative times
-        const validStartTime = Math.max(0, startTime);
-        const maxTime = this.state.metadata.timeRange.max / 1000000; // Convert µs to seconds
-        const validEndTime = Math.min(maxTime, endTime);
-        
-        // Skip if invalid range
-        if (validStartTime >= validEndTime) {
-            console.warn('Invalid time range for resampling:', { startTime, endTime, validStartTime, validEndTime });
-            return;
-        }
-        
-        // Determine appropriate maxPoints based on zoom level
-        const timespan = validEndTime - validStartTime;
-        const totalDuration = maxTime;
-        const zoomFactor = totalDuration / timespan;
-        
-        // Higher point density for position data since it's interpolated to 1ms
-        const maxPoints = Math.min(8000, Math.max(3000, Math.floor(4000 * Math.sqrt(zoomFactor))));
-        
-        console.log(`Resampling for zoom: ${validStartTime.toFixed(3)}s - ${validEndTime.toFixed(3)}s, ${maxPoints} points`);
-        
-        const response = await fetch(
-            `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/pos-data/pos_x?` +
-            `start=${validStartTime * 1000000}&` +  // Convert to microseconds
-            `end=${validEndTime * 1000000}&` +
-            `maxPoints=${maxPoints}`,
-            {
-                method: 'GET',
-                headers: {
-                    'Accept': 'application/json'
-                }
+    /**
+     * Resample position data for new time range - MODIFIED: Added abort signal support
+     */
+    async resampleDataForTimeRange(startTime, endTime) {
+        try {
+            // Validate time range - don't allow negative times
+            const validStartTime = Math.max(0, startTime);
+            const maxTime = this.state.metadata.timeRange.max / 1000000; // Convert µs to seconds
+            const validEndTime = Math.min(maxTime, endTime);
+            
+            // Skip if invalid range
+            if (validStartTime >= validEndTime) {
+                console.warn('Invalid time range for resampling:', { startTime, endTime, validStartTime, validEndTime });
+                return;
             }
-        );
-        
-        if (response.ok) {
-            const result = await response.json();
-            if (result.success) {
-                // Handle the nested API response structure correctly
-                const apiData = result.data.data || result.data;
-                
-                if (!apiData.time || !Array.isArray(apiData.time)) {
-                    console.error('Invalid resampling response:', result);
-                    return;
-                }
-                
-                // Convert time back to seconds
-                const timeInSeconds = apiData.time.map(t => t / 1000000);
-                
-                // Use Plotly.react to completely update the plot
-                const newTraces = [{
-                    x: timeInSeconds,
-                    y: apiData.values,
-                    type: 'scatter',
-                    mode: 'lines',
-                    name: `Position X [mm]`,
-                    line: { 
-                        color: this.config.colors.pos_x,
-                        width: 2
+            
+            // Determine appropriate maxPoints based on zoom level
+            const timespan = validEndTime - validStartTime;
+            const totalDuration = maxTime;
+            const zoomFactor = totalDuration / timespan;
+            
+            // Higher point density for position data since it's interpolated to 1ms
+            const maxPoints = Math.min(8000, Math.max(3000, Math.floor(4000 * Math.sqrt(zoomFactor))));
+            
+            console.log(`Resampling for zoom: ${validStartTime.toFixed(3)}s - ${validEndTime.toFixed(3)}s, ${maxPoints} points`);
+            
+            // Create abort controller for resampling request
+            const resampleAbortController = new AbortController();
+            
+            const response = await fetch(
+                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/pos-data/pos_x?` +
+                `start=${validStartTime * 1000000}&` +  // Convert to microseconds
+                `end=${validEndTime * 1000000}&` +
+                `maxPoints=${maxPoints}`,
+                {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json'
                     },
-                    hovertemplate: 
-                        '<b>%{fullData.name}</b><br>' +
-                        'Time: %{x:.4f} s<br>' +
-                        'Position: %{y:.3f} mm<br>' +
-                        '<extra></extra>'
-                }];
-                
-                // Update the plot completely with new data
-                await Plotly.react(this.elements.distancePlot, newTraces, this.plot.layout);
-                
-                console.log(`Plot updated with ${timeInSeconds.length} points for range ${validStartTime.toFixed(3)}s - ${validEndTime.toFixed(3)}s`);
-                
-                // Update internal state for consistency
-                this.state.plotData.pos_x.data = {
-                    time: timeInSeconds,
-                    values: apiData.values
-                };
-                
-                console.log(`Resampling completed: ${apiData.time.length} points loaded`);
-                
+                    signal: resampleAbortController.signal
+                }
+            );
+            
+            if (response.ok) {
+                const result = await response.json();
+                if (result.success) {
+                    // Handle the nested API response structure correctly
+                    const apiData = result.data.data || result.data;
+                    
+                    if (!apiData.time || !Array.isArray(apiData.time)) {
+                        console.error('Invalid resampling response:', result);
+                        return;
+                    }
+                    
+                    // Convert time back to seconds
+                    const timeInSeconds = apiData.time.map(t => t / 1000000);
+                    
+                    // Use Plotly.react to completely update the plot
+                    const newTraces = [{
+                        x: timeInSeconds,
+                        y: apiData.values,
+                        type: 'scatter',
+                        mode: 'lines',
+                        name: `Position X [mm]`,
+                        line: { 
+                            color: this.config.colors.pos_x,
+                            width: 2
+                        },
+                        hovertemplate: 
+                            '<b>%{fullData.name}</b><br>' +
+                            'Time: %{x:.4f} s<br>' +
+                            'Position: %{y:.3f} mm<br>' +
+                            '<extra></extra>'
+                    }];
+                    
+                    // Update the plot completely with new data
+                    await Plotly.react(this.elements.distancePlot, newTraces, this.plot.layout);
+                    
+                    console.log(`Plot updated with ${timeInSeconds.length} points for range ${validStartTime.toFixed(3)}s - ${validEndTime.toFixed(3)}s`);
+                    
+                    // Update internal state for consistency
+                    this.state.plotData.pos_x.data = {
+                        time: timeInSeconds,
+                        values: apiData.values
+                    };
+                    
+                    console.log(`Resampling completed: ${apiData.time.length} points loaded`);
+                    
+                } else {
+                    console.error('Resampling API error:', result.error);
+                }
             } else {
-                console.error('Resampling API error:', result.error);
+                console.error('Resampling HTTP error:', response.status);
             }
-        } else {
-            console.error('Resampling HTTP error:', response.status);
+            
+        } catch (error) {
+            // Don't log abort errors
+            if (error.name === 'AbortError') {
+                console.log('Distance sensor resampling was aborted');
+                return;
+            }
+            
+            console.error('Error resampling position data:', error);
         }
-        
-    } catch (error) {
-        console.error('Error resampling position data:', error);
     }
-}
     
     /**
      * Reset zoom to full position data range
@@ -636,7 +723,13 @@ async resampleDataForTimeRange(startTime, endTime) {
         }
     }
     
+    /**
+     * Destroy module - MODIFIED: Enhanced cleanup
+     */
     destroy() {
+        // Abort any ongoing requests
+        this.abort();
+        
         // Clean up Plotly plot
         if (this.plot && this.elements.distancePlot) {
             Plotly.purge(this.elements.distancePlot);
@@ -659,7 +752,8 @@ async resampleDataForTimeRange(startTime, endTime) {
     getState() {
         return {
             ...this.state,
-            config: this.config
+            config: this.config,
+            isLoading: this.isLoading
         };
     }
     

@@ -3,6 +3,7 @@
  * Executive overview of key metrics and experiment results
  * Integrates with backend SummaryService for comprehensive analysis
  * NOW INCLUDES: Notes functionality for user annotations
+ * UPDATED: Added cleanup and abort functionality
  */
 
 class ExperimentSummary {
@@ -21,6 +22,11 @@ class ExperimentSummary {
         // Notes-specific state
         this.lastSavedNotesText = '';
         this.notesAutoSaveTimeout = null;
+        
+        // NEW: Request management
+        this.abortController = null;
+        this.isLoading = false;
+        this.notesAbortController = null;
         
         console.log('ExperimentSummary initialized');
         this.init();
@@ -141,8 +147,91 @@ class ExperimentSummary {
         }
     }
     
+    /**
+     * NEW: Abort ongoing requests
+     */
+    abort() {
+        // Abort main summary requests
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        
+        // Abort notes requests
+        if (this.notesAbortController) {
+            this.notesAbortController.abort();
+            this.notesAbortController = null;
+        }
+        
+        // Clear notes auto-save timeout
+        if (this.notesAutoSaveTimeout) {
+            clearTimeout(this.notesAutoSaveTimeout);
+            this.notesAutoSaveTimeout = null;
+        }
+        
+        this.isLoading = false;
+        
+        console.log('ExperimentSummary: Ongoing requests aborted');
+    }
+    
+    /**
+     * NEW: Cleanup state without destroying DOM
+     */
+    cleanup() {
+        // Abort any ongoing requests
+        this.abort();
+        
+        // Reset state
+        this.state.experimentId = null;
+        this.state.summaryData = null;
+        this.state.isLoaded = false;
+        this.state.lastUpdated = null;
+        
+        // Reset notes state
+        this.lastSavedNotesText = '';
+        
+        // Clear UI elements
+        if (this.elements.notesTextarea) {
+            this.elements.notesTextarea.value = '';
+        }
+        
+        // Reset notes UI
+        this.updateNotesCharCount();
+        this.updateSaveButtonState();
+        this.hideNotesError();
+        
+        if (this.elements.notesStatus) {
+            this.elements.notesStatus.textContent = '';
+            this.elements.notesStatus.style.color = '';
+        }
+        
+        if (this.elements.notesLastSaved) {
+            this.elements.notesLastSaved.textContent = '';
+        }
+        
+        // Clear summary display
+        this.hideSummary();
+        this.hideError();
+        this.hideLoading();
+        
+        console.log('ExperimentSummary: Cleanup completed');
+    }
+    
+    /**
+     * Load experiment - MODIFIED: Added abort controller support
+     */
     async loadExperiment(experimentId) {
         try {
+            // Prevent overlapping loads
+            if (this.isLoading) {
+                console.log('Already loading experiment summary, aborting previous request...');
+                this.abort();
+            }
+            
+            // Create new abort controller
+            this.abortController = new AbortController();
+            this.isLoading = true;
+            
             console.log('Loading summary for experiment: ' + experimentId);
             
             this.state.experimentId = experimentId;
@@ -158,21 +247,38 @@ class ExperimentSummary {
                 this.loadExperimentNotes()
             ]);
             
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
+            
             this.populateSummaryDisplay();
             
             this.state.isLoaded = true;
             this.state.lastUpdated = new Date();
+            this.isLoading = false;
             this.hideLoading();
             
             console.log('Summary loaded successfully for ' + experimentId);
             
         } catch (error) {
+            this.isLoading = false;
+            
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                console.log('Experiment summary loading was aborted');
+                return;
+            }
+            
             console.error('Failed to load summary for ' + experimentId + ':', error);
             this.hideLoading();
             this.onError(error);
         }
     }
     
+    /**
+     * Load summary data - MODIFIED: Added abort signal support
+     */
     async loadSummaryData() {
         try {
             const response = await fetch(
@@ -181,7 +287,8 @@ class ExperimentSummary {
                     method: 'GET',
                     headers: {
                         'Accept': 'application/json'
-                    }
+                    },
+                    signal: this.abortController.signal
                 }
             );
             
@@ -211,13 +318,16 @@ class ExperimentSummary {
         }
     }
     
-    // === NEW NOTES FUNCTIONALITY ===
+    // === NOTES FUNCTIONALITY - MODIFIED: Added abort support ===
     
     /**
-     * Load experiment notes
+     * Load experiment notes - MODIFIED: Added abort signal support
      */
     async loadExperimentNotes() {
         try {
+            // Create separate abort controller for notes
+            this.notesAbortController = new AbortController();
+            
             if (this.elements.notesLoading) {
                 this.elements.notesLoading.classList.remove('hidden');
             }
@@ -226,7 +336,8 @@ class ExperimentSummary {
                 this.config.apiBaseUrl + '/experiments/' + this.state.experimentId + '/notes',
                 {
                     method: 'GET',
-                    headers: { 'Accept': 'application/json' }
+                    headers: { 'Accept': 'application/json' },
+                    signal: this.notesAbortController.signal
                 }
             );
             
@@ -257,6 +368,12 @@ class ExperimentSummary {
             }
             
         } catch (error) {
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                console.log('Notes loading was aborted');
+                return;
+            }
+            
             console.error('Notes loading failed:', error);
             this.showNotesError('Failed to load notes: ' + error.message);
         } finally {
@@ -369,6 +486,11 @@ class ExperimentSummary {
             await this.saveNotesToServer(text);
             
         } catch (error) {
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                return;
+            }
+            
             console.warn('Auto-save failed:', error);
             // Don't show error for auto-save failures, just update status
             if (this.elements.notesStatus) {
@@ -404,6 +526,11 @@ class ExperimentSummary {
             }
             
         } catch (error) {
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                return;
+            }
+            
             console.error('Manual save failed:', error);
             this.showNotesError('Failed to save notes: ' + error.message);
             
@@ -415,9 +542,15 @@ class ExperimentSummary {
     }
     
     /**
-     * Save notes to server
+     * Save notes to server - MODIFIED: Added abort signal support
      */
     async saveNotesToServer(text) {
+        // Create new abort controller for this save operation
+        if (this.notesAbortController) {
+            this.notesAbortController.abort();
+        }
+        this.notesAbortController = new AbortController();
+        
         const response = await fetch(
             this.config.apiBaseUrl + '/experiments/' + this.state.experimentId + '/notes',
             {
@@ -426,7 +559,8 @@ class ExperimentSummary {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json'
                 },
-                body: JSON.stringify({ notes: text })
+                body: JSON.stringify({ notes: text }),
+                signal: this.notesAbortController.signal
             }
         );
         
@@ -465,6 +599,11 @@ class ExperimentSummary {
             this.updateNotesCharCount();
             
         } catch (error) {
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                return;
+            }
+            
             console.error('Clear notes failed:', error);
             this.showNotesError('Failed to clear notes: ' + error.message);
         }
@@ -730,9 +869,14 @@ class ExperimentSummary {
         return railString;
     }
     
+    /**
+     * Handle refresh - MODIFIED: Added abort before new load
+     */
     async handleRefresh() {
         console.log('Refreshing summary data...');
         try {
+            this.abort(); // Cancel any ongoing loads
+            
             const response = await fetch(
                 this.config.apiBaseUrl + '/experiments/' + this.state.experimentId + '/summary/refresh',
                 { method: 'GET' }
@@ -749,9 +893,13 @@ class ExperimentSummary {
         }
     }
     
+    /**
+     * Handle retry - MODIFIED: Added abort before new load
+     */
     async handleRetry() {
         console.log('Retrying summary load...');
         if (this.state.experimentId) {
+            this.abort(); // Cancel any ongoing loads
             await this.loadExperiment(this.state.experimentId);
         }
     }
@@ -839,14 +987,15 @@ class ExperimentSummary {
         }
     }
     
+    /**
+     * Destroy module - MODIFIED: Enhanced cleanup
+     */
     destroy() {
+        // Abort any ongoing requests
+        this.abort();
+        
         if (this.config.refreshInterval) {
             clearInterval(this.config.refreshInterval);
-        }
-        
-        // Clean up notes auto-save timeout
-        if (this.notesAutoSaveTimeout) {
-            clearTimeout(this.notesAutoSaveTimeout);
         }
         
         const container = document.getElementById(this.containerId);
@@ -866,7 +1015,8 @@ class ExperimentSummary {
             isVisible: this.state.isVisible,
             experimentId: this.state.experimentId,
             lastUpdated: this.state.lastUpdated,
-            config: this.config
+            config: this.config,
+            isLoading: this.isLoading
         };
     }
     

@@ -3,6 +3,7 @@
  * Displays experiment photos in a grid layout with lightbox viewing functionality
  * Integrates with photo service API and provides thumbnail + full-size viewing
  * Features: Grid layout, lightbox modal, keyboard navigation, download support
+ * UPDATED: Added cleanup and abort functionality
  */
 
 class PhotoGallery {
@@ -19,6 +20,11 @@ class PhotoGallery {
             loadingImages: new Set()
         };
         this.elements = {};
+        
+        // NEW: Request management
+        this.abortController = null;
+        this.isLoading = false;
+        this.imageAbortControllers = new Map(); // Track individual image loads
         
         console.log('PhotoGallery initialized');
         this.init();
@@ -131,22 +137,99 @@ class PhotoGallery {
         }
         
         // Keyboard navigation
-        document.addEventListener('keydown', (event) => this.handleKeyboard(event));
+        this.boundKeyboardHandler = (event) => this.handleKeyboard(event);
+        document.addEventListener('keydown', this.boundKeyboardHandler);
         
         // Prevent context menu on photos (optional)
-        document.addEventListener('contextmenu', (event) => {
+        this.boundContextMenuHandler = (event) => {
             if (event.target.closest('.photo-thumbnail img, .lightbox-photo')) {
                 event.preventDefault();
             }
-        });
+        };
+        document.addEventListener('contextmenu', this.boundContextMenuHandler);
     }
     
     /**
-     * Load experiment data (Standard module interface)
+     * NEW: Abort ongoing requests and image loads
+     */
+    abort() {
+        // Abort main API request
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        
+        // Abort all ongoing image loads
+        for (const [filename, controller] of this.imageAbortControllers) {
+            try {
+                controller.abort();
+            } catch (error) {
+                console.warn(`Error aborting image load for ${filename}:`, error);
+            }
+        }
+        this.imageAbortControllers.clear();
+        
+        this.isLoading = false;
+        this.state.loadingImages.clear();
+        
+        console.log('PhotoGallery: Ongoing requests and image loads aborted');
+    }
+    
+    /**
+     * NEW: Cleanup state without destroying DOM
+     */
+    cleanup() {
+        // Abort any ongoing requests
+        this.abort();
+        
+        // Close lightbox if open
+        if (this.state.isLightboxOpen) {
+            this.closeLightbox();
+        }
+        
+        // Reset state
+        this.state.experimentId = null;
+        this.state.photos = [];
+        this.state.isLoaded = false;
+        this.state.currentPhotoIndex = 0;
+        this.state.isLightboxOpen = false;
+        this.state.loadingImages.clear();
+        
+        // Clear photos grid
+        if (this.elements.photosGrid) {
+            this.elements.photosGrid.innerHTML = '';
+        }
+        
+        // Clear lightbox image
+        if (this.elements.lightboxImage) {
+            this.elements.lightboxImage.src = '';
+            this.elements.lightboxImage.alt = '';
+        }
+        
+        // Clear UI
+        this.hideError();
+        this.hidePhotos();
+        this.hideLoading();
+        
+        console.log('PhotoGallery: Cleanup completed');
+    }
+    
+    /**
+     * Load experiment data (Standard module interface) - MODIFIED: Added abort controller support
      * @param {string} experimentId - Experiment ID
      */
     async loadExperiment(experimentId) {
         try {
+            // Prevent overlapping loads
+            if (this.isLoading) {
+                console.log('Already loading photo gallery, aborting previous request...');
+                this.abort();
+            }
+            
+            // Create new abort controller
+            this.abortController = new AbortController();
+            this.isLoading = true;
+            
             console.log(`Loading photos for experiment: ${experimentId}`);
             
             this.state.experimentId = experimentId;
@@ -160,15 +243,29 @@ class PhotoGallery {
             // Load photos metadata
             await this.loadPhotosMetadata();
             
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
+            
             // Create photo grid
             this.createPhotosGrid();
                       
             this.state.isLoaded = true;
+            this.isLoading = false;
             this.hideLoading();
             
             console.log(`Photo gallery loaded successfully for ${experimentId}: ${this.state.photos.length} photos`);
             
         } catch (error) {
+            this.isLoading = false;
+            
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                console.log('Photo gallery loading was aborted');
+                return;
+            }
+            
             console.error(`Failed to load experiment ${experimentId}:`, error);
             this.hideLoading();
             this.onError(error);
@@ -176,12 +273,13 @@ class PhotoGallery {
     }
     
     /**
-     * Load photos metadata from API
+     * Load photos metadata from API - MODIFIED: Added abort signal support
      */
     async loadPhotosMetadata() {
         try {
             const response = await fetch(
-                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/photos`
+                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/photos`,
+                { signal: this.abortController.signal }
             );
             
             if (!response.ok) {
@@ -208,7 +306,7 @@ class PhotoGallery {
     }
     
     /**
-     * Create photos grid with thumbnails
+     * Create photos grid with thumbnails - MODIFIED: Added abort support for image loads
      */
     createPhotosGrid() {
         if (!this.elements.photosGrid || this.state.photos.length === 0) {
@@ -225,11 +323,14 @@ class PhotoGallery {
             this.elements.photosGrid.appendChild(thumbnail);
         });
         
+        // Show photos container
+        this.showPhotos();
+        
         console.log(`Created photo grid with ${this.state.photos.length} thumbnails`);
     }
     
     /**
-     * Create individual photo thumbnail element
+     * Create individual photo thumbnail element - MODIFIED: Added abort support for image loading
      * @param {Object} photo - Photo metadata
      * @param {number} index - Photo index
      * @returns {HTMLElement} Thumbnail element
@@ -268,18 +369,33 @@ class PhotoGallery {
         photoInfo.appendChild(size);
         thumbnail.appendChild(photoInfo);
         
+        // Create abort controller for this image
+        const imageAbortController = new AbortController();
+        this.imageAbortControllers.set(photo.filename, imageAbortController);
+        
         // Set up image loading
         img.onload = () => {
             loading.remove();
             thumbnail.appendChild(img);
             this.state.loadingImages.delete(photo.filename);
+            this.imageAbortControllers.delete(photo.filename);
         };
         
         img.onerror = () => {
             loading.textContent = 'Failed to load';
             loading.style.color = 'var(--status-error)';
+            this.state.loadingImages.delete(photo.filename);
+            this.imageAbortControllers.delete(photo.filename);
             console.error(`Failed to load thumbnail: ${photo.filename}`);
         };
+        
+        // Handle abort for image loading
+        imageAbortController.signal.addEventListener('abort', () => {
+            img.src = '';
+            loading.textContent = 'Cancelled';
+            loading.style.color = 'var(--text-secondary)';
+            this.state.loadingImages.delete(photo.filename);
+        });
         
         // Load thumbnail image
         this.state.loadingImages.add(photo.filename);
@@ -339,6 +455,11 @@ class PhotoGallery {
             setTimeout(() => {
                 this.elements.lightboxModal.classList.add('hidden');
             }, 200);
+        }
+        
+        // Clear lightbox image to free memory
+        if (this.elements.lightboxImage) {
+            this.elements.lightboxImage.src = '';
         }
         
         // Restore body scrolling
@@ -585,14 +706,25 @@ class PhotoGallery {
         }
     }
     
+    /**
+     * Destroy module - MODIFIED: Enhanced cleanup
+     */
     destroy() {
+        // Abort any ongoing requests and image loads
+        this.abort();
+        
         // Close lightbox
         if (this.state.isLightboxOpen) {
             this.closeLightbox();
         }
         
         // Remove event listeners
-        document.removeEventListener('keydown', this.handleKeyboard);
+        if (this.boundKeyboardHandler) {
+            document.removeEventListener('keydown', this.boundKeyboardHandler);
+        }
+        if (this.boundContextMenuHandler) {
+            document.removeEventListener('contextmenu', this.boundContextMenuHandler);
+        }
         
         // Clear container
         const container = document.getElementById(this.containerId);
@@ -610,7 +742,8 @@ class PhotoGallery {
     getState() {
         return {
             ...this.state,
-            config: this.config
+            config: this.config,
+            isLoading: this.isLoading
         };
     }
     
@@ -642,12 +775,13 @@ class PhotoGallery {
     }
     
     /**
-     * Refresh photos (reload from API)
+     * Refresh photos (reload from API) - MODIFIED: Added abort before reload
      * @returns {Promise<void>}
      */
     async refreshPhotos() {
         if (this.state.experimentId) {
             console.log('Refreshing photos...');
+            this.abort(); // Cancel any ongoing loads
             await this.loadExperiment(this.state.experimentId);
         }
     }

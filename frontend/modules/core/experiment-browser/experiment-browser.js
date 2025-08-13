@@ -1,6 +1,7 @@
 /**
  * Experiment Browser Module
  * Displays, filters, and manages experiment selection
+ * UPDATED: Added cleanup and abort functionality
  */
 
 class ExperimentBrowser {
@@ -19,6 +20,10 @@ class ExperimentBrowser {
             error: null
         };
         this.elements = {};
+        
+        // NEW: Request management
+        this.abortController = null;
+        this.isLoading = false;
         
         console.log('ExperimentBrowser initialized');
         this.init();
@@ -148,8 +153,59 @@ class ExperimentBrowser {
         }
     }
     
+    /**
+     * NEW: Abort ongoing requests
+     */
+    abort() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        this.isLoading = false;
+        console.log('ExperimentBrowser: Ongoing requests aborted');
+    }
+    
+    /**
+     * NEW: Cleanup state without destroying DOM
+     */
+    cleanup() {
+        // Abort any ongoing requests
+        this.abort();
+        
+        // Reset state
+        this.state.experiments = [];
+        this.state.filteredExperiments = [];
+        this.state.selectedExperiment = null;
+        this.state.isLoaded = false;
+        this.state.error = null;
+        
+        // Clear UI
+        if (this.elements.experimentsTableBody) {
+            this.elements.experimentsTableBody.innerHTML = '';
+        }
+        
+        this.hideTable();
+        this.hideError();
+        this.hideLoading();
+        
+        console.log('ExperimentBrowser: Cleanup completed');
+    }
+    
+    /**
+     * Load experiment data - MODIFIED: Added abort controller support
+     */
     async loadData() {
         try {
+            // Prevent overlapping loads
+            if (this.isLoading) {
+                console.log('Already loading experiments, aborting previous request...');
+                this.abort();
+            }
+            
+            // Create new abort controller
+            this.abortController = new AbortController();
+            this.isLoading = true;
+            
             this.showLoading();
             
             const url = `${this.config.apiBaseUrl}/experiments`;
@@ -157,7 +213,8 @@ class ExperimentBrowser {
                 method: 'GET',
                 headers: {
                     'Accept': 'application/json'
-                }
+                },
+                signal: this.abortController.signal
             });
             
             if (!response.ok) {
@@ -170,9 +227,15 @@ class ExperimentBrowser {
                 throw new Error(data.error || 'API returned unsuccessful response');
             }
             
+            // Check if request was aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
+            
             this.state.experiments = data.data || [];
             this.state.isLoaded = true;
             this.state.error = null;
+            this.isLoading = false;
             
             this.applyFiltersAndSort();
             this.hideLoading();
@@ -181,6 +244,14 @@ class ExperimentBrowser {
             console.log(`Loaded ${this.state.experiments.length} experiments`);
             
         } catch (error) {
+            this.isLoading = false;
+            
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                console.log('Experiment loading was aborted');
+                return;
+            }
+            
             console.error('Failed to load experiments:', error);
             this.state.error = error;
             this.hideLoading();
@@ -470,13 +541,21 @@ class ExperimentBrowser {
         this.applyFiltersAndSort();
     }
     
+    /**
+     * Handle refresh - MODIFIED: Added abort before new load
+     */
     async handleRefresh() {
         console.log('Refreshing experiment data...');
+        this.abort(); // Cancel any ongoing request
         await this.loadData();
     }
     
+    /**
+     * Handle retry - MODIFIED: Added abort before new load
+     */
     async handleRetry() {
         console.log('Retrying data load...');
+        this.abort(); // Cancel any ongoing request
         await this.loadData();
     }
     
@@ -650,7 +729,13 @@ class ExperimentBrowser {
         }
     }
     
+    /**
+     * Destroy module - MODIFIED: Enhanced cleanup
+     */
     destroy() {
+        // Abort any ongoing requests
+        this.abort();
+        
         // Remove event listeners
         if (this.config.enableKeyboardNavigation) {
             document.removeEventListener('keydown', this.handleKeydown.bind(this));
@@ -677,7 +762,8 @@ class ExperimentBrowser {
     getState() {
         return {
             ...this.state,
-            config: this.config
+            config: this.config,
+            isLoading: this.isLoading
         };
     }
     

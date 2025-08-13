@@ -3,6 +3,7 @@
  * Displays TCP5/HDF5 oscilloscope data with multi-axis plotting and custom Y-axis scrolling
  * Integrates with progressive HDF5 reader for optimal performance
  * Supports all 6 channels with dynamic discovery and coordinated bulk loading
+ * UPDATED: Added cleanup and abort functionality
  */
 
 class Tcp5Oscilloscope {
@@ -27,6 +28,13 @@ class Tcp5Oscilloscope {
         this.axisHoverZones = [];
         this.isAxisHovering = false;
         this.currentAxis = null;
+        
+        // NEW: Request management
+        this.abortController = null;
+        this.isLoading = false;
+        
+        // Event handler binding for proper cleanup
+        this.boundEventHandlers = {};
         
         console.log('Tcp5Oscilloscope initialized');
         this.init();
@@ -129,11 +137,68 @@ class Tcp5Oscilloscope {
     }
     
     /**
-     * Load experiment data (Standard module interface)
+     * NEW: Abort ongoing requests
+     */
+    abort() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        this.isLoading = false;
+        console.log('Tcp5Oscilloscope: Ongoing requests aborted');
+    }
+    
+    /**
+     * NEW: Cleanup state without destroying DOM
+     */
+    cleanup() {
+        // Abort any ongoing requests
+        this.abort();
+        
+        // Reset state
+        this.state.experimentId = null;
+        this.state.metadata = null;
+        this.state.plotData = null;
+        this.state.isLoaded = false;
+        this.state.isPlotReady = false;
+        this.state.currentTimeRange = { min: 0, max: 100 };
+        this.state.availableChannels = [];
+        this.state.defaultChannels = [];
+        
+        // Reset axis hovering state
+        this.isAxisHovering = false;
+        this.currentAxis = null;
+        
+        // Clear plot
+        if (this.plot && this.elements.oscilloscopePlot) {
+            Plotly.purge(this.elements.oscilloscopePlot);
+            this.plot = null;
+        }
+        
+        // Clear UI
+        this.hideError();
+        this.hidePlot();
+        this.hideLoading();
+        
+        console.log('Tcp5Oscilloscope: Cleanup completed');
+    }
+    
+    /**
+     * Load experiment data (Standard module interface) - MODIFIED: Added abort controller support
      * @param {string} experimentId - Experiment ID
      */
     async loadExperiment(experimentId) {
         try {
+            // Prevent overlapping loads
+            if (this.isLoading) {
+                console.log('Already loading TCP5 oscilloscope data, aborting previous request...');
+                this.abort();
+            }
+            
+            // Create new abort controller
+            this.abortController = new AbortController();
+            this.isLoading = true;
+            
             console.log(`Loading TCP5 data for experiment: ${experimentId}`);
             
             this.state.experimentId = experimentId;
@@ -147,18 +212,37 @@ class Tcp5Oscilloscope {
             // Load metadata first to discover available channels
             await this.loadMetadata();
             
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
+            
             // Load all available channels data
             await this.loadAllChannelsData();
+            
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
             
             // Create the plot
             await this.createPlot();
             
             this.state.isLoaded = true;
+            this.isLoading = false;
             this.hideLoading();
             
             console.log(`TCP5 data loaded successfully for ${experimentId}`);
             
         } catch (error) {
+            this.isLoading = false;
+            
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                console.log('TCP5 oscilloscope loading was aborted');
+                return;
+            }
+            
             console.error(`Failed to load TCP5 experiment ${experimentId}:`, error);
             this.hideLoading();
             this.onError(error);
@@ -166,12 +250,13 @@ class Tcp5Oscilloscope {
     }
     
     /**
-     * Load HDF5/TCP5 file metadata and discover available channels
+     * Load HDF5/TCP5 file metadata and discover available channels - MODIFIED: Added abort signal support
      */
     async loadMetadata() {
         try {
             const response = await fetch(
-                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/hdf5-metadata`
+                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/hdf5-metadata`,
+                { signal: this.abortController.signal }
             );
             
             if (!response.ok) {
@@ -208,7 +293,7 @@ class Tcp5Oscilloscope {
     }
     
     /**
-     * Load all available channels data using coordinated bulk loading
+     * Load all available channels data using coordinated bulk loading - MODIFIED: Added abort signal support
      */
     async loadAllChannelsData() {
         try {
@@ -230,7 +315,8 @@ class Tcp5Oscilloscope {
                         startTime: this.state.currentTimeRange.min,
                         endTime: this.state.currentTimeRange.max,
                         maxPoints: this.config.maxPoints
-                    })
+                    }),
+                    signal: this.abortController.signal
                 }
             );
             
@@ -523,7 +609,7 @@ class Tcp5Oscilloscope {
     }
     
     /**
-     * Resample data for new time range using HDF5 coordinated bulk loading
+     * Resample data for new time range using HDF5 coordinated bulk loading - MODIFIED: Added abort signal support
      */
     async resampleDataForTimeRange(startTime, endTime) {
         try {
@@ -534,6 +620,9 @@ class Tcp5Oscilloscope {
             const maxPoints = Math.min(5000, Math.max(2000, Math.floor(3000 * Math.sqrt(zoomFactor))));
             
             console.log(`TCP5 resampling: zoom ${zoomFactor.toFixed(1)}x, ${maxPoints} points`);
+            
+            // Create abort controller for resampling request
+            const resampleAbortController = new AbortController();
             
             // Load data for new time range using coordinated bulk loading
             const response = await fetch(
@@ -548,7 +637,8 @@ class Tcp5Oscilloscope {
                         startTime: startTime,
                         endTime: endTime,
                         maxPoints: maxPoints
-                    })
+                    }),
+                    signal: resampleAbortController.signal
                 }
             );
             
@@ -566,6 +656,12 @@ class Tcp5Oscilloscope {
             }
             
         } catch (error) {
+            // Don't log abort errors
+            if (error.name === 'AbortError') {
+                console.log('TCP5 resampling was aborted');
+                return;
+            }
+            
             console.error('Error resampling TCP5 data:', error);
         }
     }
@@ -606,15 +702,15 @@ class Tcp5Oscilloscope {
     setupAxisScrolling() {
         if (!this.elements.oscilloscopePlot) return;
         
+        // Store bound event handlers for proper cleanup
+        this.boundEventHandlers.axisWheel = (event) => this.handleAxisWheel(event);
+        this.boundEventHandlers.axisHover = (event) => this.handleAxisHover(event);
+        
         // Add mouse wheel event listener to plot container
-        this.elements.oscilloscopePlot.addEventListener('wheel', (event) => {
-            this.handleAxisWheel(event);
-        }, { passive: false });
+        this.elements.oscilloscopePlot.addEventListener('wheel', this.boundEventHandlers.axisWheel, { passive: false });
         
         // Add mouse move event to track axis hovering
-        this.elements.oscilloscopePlot.addEventListener('mousemove', (event) => {
-            this.handleAxisHover(event);
-        });
+        this.elements.oscilloscopePlot.addEventListener('mousemove', this.boundEventHandlers.axisHover);
     }
     
     /**
@@ -803,7 +899,13 @@ class Tcp5Oscilloscope {
         }
     }
     
+    /**
+     * Destroy module - MODIFIED: Enhanced cleanup with proper event listener removal
+     */
     destroy() {
+        // Abort any ongoing requests
+        this.abort();
+        
         // Clean up Plotly plot
         if (this.plot && this.elements.oscilloscopePlot) {
             Plotly.purge(this.elements.oscilloscopePlot);
@@ -811,8 +913,12 @@ class Tcp5Oscilloscope {
         
         // Remove event listeners
         if (this.elements.oscilloscopePlot) {
-            this.elements.oscilloscopePlot.removeEventListener('wheel', this.handleAxisWheel);
-            this.elements.oscilloscopePlot.removeEventListener('mousemove', this.handleAxisHover);
+            if (this.boundEventHandlers.axisWheel) {
+                this.elements.oscilloscopePlot.removeEventListener('wheel', this.boundEventHandlers.axisWheel);
+            }
+            if (this.boundEventHandlers.axisHover) {
+                this.elements.oscilloscopePlot.removeEventListener('mousemove', this.boundEventHandlers.axisHover);
+            }
         }
         
         // Clear container
@@ -825,6 +931,7 @@ class Tcp5Oscilloscope {
         this.state = {};
         this.elements = {};
         this.plot = null;
+        this.boundEventHandlers = {};
         
         console.log('Tcp5Oscilloscope destroyed');
     }
@@ -832,7 +939,8 @@ class Tcp5Oscilloscope {
     getState() {
         return {
             ...this.state,
-            config: this.config
+            config: this.config,
+            isLoading: this.isLoading
         };
     }
 }

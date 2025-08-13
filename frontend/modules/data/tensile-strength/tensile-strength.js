@@ -3,6 +3,7 @@
  * Displays tensile testing CSV data with 3 individual plots for materials analysis
  * Integrates with tensile CSV backend service and shows red reference lines
  * Features: Force vs Displacement, Force vs Time, Displacement vs Time
+ * UPDATED: Added cleanup and abort functionality
  */
 
 class TensileStrength {
@@ -24,6 +25,10 @@ class TensileStrength {
             forceTimePlot: null,
             displacementTimePlot: null
         };
+        
+        // NEW: Request management
+        this.abortController = null;
+        this.isLoading = false;
         
         console.log('TensileStrength initialized');
         this.init();
@@ -122,11 +127,72 @@ class TensileStrength {
     }
     
     /**
-     * Load experiment data (Standard module interface)
+     * NEW: Abort ongoing requests
+     */
+    abort() {
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        this.isLoading = false;
+        console.log('TensileStrength: Ongoing requests aborted');
+    }
+    
+    /**
+     * NEW: Cleanup state without destroying DOM
+     */
+    cleanup() {
+        // Abort any ongoing requests
+        this.abort();
+        
+        // Reset state
+        this.state.experimentId = null;
+        this.state.metadata = null;
+        this.state.plotData = null;
+        this.state.isLoaded = false;
+        this.state.arePlotsReady = false;
+        this.state.currentTimeRange = { min: 0, max: 100 };
+        
+        // Clear plots
+        Object.values(this.plots).forEach(plot => {
+            if (plot) {
+                const plotElement = plot._fullLayout?._container || plot.parentNode;
+                if (plotElement) {
+                    Plotly.purge(plotElement);
+                }
+            }
+        });
+        
+        this.plots = {
+            forceDisplacementPlot: null,
+            forceTimePlot: null,
+            displacementTimePlot: null
+        };
+        
+        // Clear UI
+        this.hideError();
+        this.hidePlots();
+        this.hideLoading();
+        
+        console.log('TensileStrength: Cleanup completed');
+    }
+    
+    /**
+     * Load experiment data (Standard module interface) - MODIFIED: Added abort controller support
      * @param {string} experimentId - Experiment ID
      */
     async loadExperiment(experimentId) {
         try {
+            // Prevent overlapping loads
+            if (this.isLoading) {
+                console.log('Already loading tensile strength data, aborting previous request...');
+                this.abort();
+            }
+            
+            // Create new abort controller
+            this.abortController = new AbortController();
+            this.isLoading = true;
+            
             console.log(`Loading tensile testing data for experiment: ${experimentId}`);
             
             this.state.experimentId = experimentId;
@@ -140,18 +206,37 @@ class TensileStrength {
             // Load metadata first
             await this.loadMetadata();
             
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
+            
             // Load all three channel data types
             await this.loadAllChannelData();
+            
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
             
             // Create all three plots
             await this.createAllPlots();
             
             this.state.isLoaded = true;
+            this.isLoading = false;
             this.hideLoading();
             
             console.log(`Tensile testing data loaded successfully for ${experimentId}`);
             
         } catch (error) {
+            this.isLoading = false;
+            
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                console.log('Tensile strength loading was aborted');
+                return;
+            }
+            
             console.error(`Failed to load experiment ${experimentId}:`, error);
             this.hideLoading();
             this.onError(error);
@@ -159,12 +244,13 @@ class TensileStrength {
     }
     
     /**
-     * Load tensile CSV metadata
+     * Load tensile CSV metadata - MODIFIED: Added abort signal support
      */
     async loadMetadata() {
         try {
             const response = await fetch(
-                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/tensile-metadata`
+                `${this.config.apiBaseUrl}/experiments/${this.state.experimentId}/tensile-metadata`,
+                { signal: this.abortController.signal }
             );
             
             if (!response.ok) {
@@ -211,7 +297,7 @@ class TensileStrength {
     }
     
     /**
-     * Load all three channel data types
+     * Load all three channel data types - MODIFIED: Added abort signal support
      */
     async loadAllChannelData() {
         try {
@@ -231,7 +317,8 @@ class TensileStrength {
                         startTime: this.state.currentTimeRange.min * 1000000, // Convert to µs
                         endTime: this.state.currentTimeRange.max * 1000000,
                         maxPoints: this.config.maxPoints
-                    })
+                    }),
+                    signal: this.abortController.signal
                 }
             );
             
@@ -780,7 +867,13 @@ class TensileStrength {
         }
     }
     
+    /**
+     * Destroy module - MODIFIED: Enhanced cleanup
+     */
     destroy() {
+        // Abort any ongoing requests
+        this.abort();
+        
         // Clean up all Plotly plots
         Object.values(this.plots).forEach(plot => {
             if (plot) {
@@ -808,7 +901,8 @@ class TensileStrength {
     getState() {
         return {
             ...this.state,
-            config: this.config
+            config: this.config,
+            isLoading: this.isLoading
         };
     }
     

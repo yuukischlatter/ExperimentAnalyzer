@@ -2,6 +2,7 @@
  * Thermal IR Module - Chart.js Implementation with Raw Data Display
  * Interactive thermal video analysis with high-performance Chart.js visualization
  * Features: Direct video loading, immediate canvas interaction, raw data visualization
+ * UPDATED: Added cleanup and abort functionality
  */
 
 class ThermalIr {
@@ -44,6 +45,15 @@ class ThermalIr {
         // Performance optimization
         this.updateQueue = [];
         this.isUpdating = false;
+        
+        // NEW: Request management
+        this.abortController = null;
+        this.isLoading = false;
+        this.analysisTimeout = null;
+        this.reconnectTimeout = null;
+        
+        // Event handler binding for proper cleanup
+        this.boundEventHandlers = {};
         
         console.log('ThermalIr initialized with Chart.js');
         this.init();
@@ -127,45 +137,171 @@ class ThermalIr {
     }
     
     attachEvents() {
-        // Video events - work immediately
+        // Video events - bind with proper cleanup tracking
         if (this.video) {
-            this.video.addEventListener('timeupdate', () => this.handleVideoTimeUpdate());
-            this.video.addEventListener('loadedmetadata', () => this.handleVideoMetadata());
-            this.video.addEventListener('canplay', () => console.log('Video ready to play'));
-            this.video.addEventListener('error', () => console.error('Video loading error'));
+            this.boundEventHandlers.videoTimeUpdate = () => this.handleVideoTimeUpdate();
+            this.boundEventHandlers.videoMetadata = () => this.handleVideoMetadata();
+            this.boundEventHandlers.videoCanPlay = () => console.log('Video ready to play');
+            this.boundEventHandlers.videoError = () => console.error('Video loading error');
+            
+            this.video.addEventListener('timeupdate', this.boundEventHandlers.videoTimeUpdate);
+            this.video.addEventListener('loadedmetadata', this.boundEventHandlers.videoMetadata);
+            this.video.addEventListener('canplay', this.boundEventHandlers.videoCanPlay);
+            this.video.addEventListener('error', this.boundEventHandlers.videoError);
         }
         
-        // Canvas events - work immediately (no WebSocket dependency)
+        // Canvas events - bind with proper cleanup tracking
         if (this.canvas) {
-            this.canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
-            this.canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
-            this.canvas.addEventListener('mouseup', (e) => this.handleMouseUp(e));
+            this.boundEventHandlers.mouseDown = (e) => this.handleMouseDown(e);
+            this.boundEventHandlers.mouseMove = (e) => this.handleMouseMove(e);
+            this.boundEventHandlers.mouseUp = (e) => this.handleMouseUp(e);
+            
+            this.canvas.addEventListener('mousedown', this.boundEventHandlers.mouseDown);
+            this.canvas.addEventListener('mousemove', this.boundEventHandlers.mouseMove);
+            this.canvas.addEventListener('mouseup', this.boundEventHandlers.mouseUp);
         }
         
         // Control events
         if (this.elements.playButton) {
-            this.elements.playButton.addEventListener('click', () => this.togglePlayPause());
+            this.boundEventHandlers.playButton = () => this.togglePlayPause();
+            this.elements.playButton.addEventListener('click', this.boundEventHandlers.playButton);
         }
         
         if (this.elements.frameSlider) {
-            this.elements.frameSlider.addEventListener('input', (e) => this.handleFrameSlider(e));
-            this.elements.frameSlider.addEventListener('mousedown', () => {
+            this.boundEventHandlers.frameSliderInput = (e) => this.handleFrameSlider(e);
+            this.boundEventHandlers.frameSliderMouseDown = () => {
                 this.elements.frameSlider.dataset.dragging = 'true';
-            });
-            this.elements.frameSlider.addEventListener('mouseup', () => {
+            };
+            this.boundEventHandlers.frameSliderMouseUp = () => {
                 delete this.elements.frameSlider.dataset.dragging;
-            });
+            };
+            
+            this.elements.frameSlider.addEventListener('input', this.boundEventHandlers.frameSliderInput);
+            this.elements.frameSlider.addEventListener('mousedown', this.boundEventHandlers.frameSliderMouseDown);
+            this.elements.frameSlider.addEventListener('mouseup', this.boundEventHandlers.frameSliderMouseUp);
         }
         
         // Window resize for chart responsiveness
-        window.addEventListener('resize', () => this.handleResize());
+        this.boundEventHandlers.windowResize = () => this.handleResize();
+        window.addEventListener('resize', this.boundEventHandlers.windowResize);
     }
     
     /**
-     * Load experiment - simplified, independent loading
+     * NEW: Abort ongoing requests and connections
+     */
+    abort() {
+        // Clear timeouts
+        if (this.analysisTimeout) {
+            clearTimeout(this.analysisTimeout);
+            this.analysisTimeout = null;
+        }
+        
+        if (this.reconnectTimeout) {
+            clearTimeout(this.reconnectTimeout);
+            this.reconnectTimeout = null;
+        }
+        
+        // Abort main API request if any
+        if (this.abortController) {
+            this.abortController.abort();
+            this.abortController = null;
+        }
+        
+        // Close WebSocket connection
+        if (this.webSocket) {
+            this.webSocket.close();
+            this.webSocket = null;
+        }
+        
+        this.isLoading = false;
+        this.state.wsConnected = false;
+        this.state.engineReady = false;
+        
+        console.log('ThermalIr: Ongoing requests and connections aborted');
+    }
+    
+    /**
+     * NEW: Cleanup state without destroying DOM
+     */
+    cleanup() {
+        // Abort any ongoing requests
+        this.abort();
+        
+        // Stop video playback
+        if (this.video) {
+            this.video.pause();
+            this.video.src = '';
+            this.video.load(); // Reset video element
+        }
+        
+        // Reset state
+        this.state.experimentId = null;
+        this.state.currentFrame = 0;
+        this.state.totalFrames = 0;
+        this.state.fps = 0;
+        this.state.isPlaying = false;
+        this.state.dragging = null;
+        this.state.lastAnalysisTime = 0;
+        this.state.lastUpdateTime = 0;
+        
+        // Reset line positions
+        this.state.line1 = { x1: 0, y1: 0, x2: 0, y2: 0 };
+        this.state.line2 = { x1: 0, y1: 0, x2: 0, y2: 0 };
+        
+        // Clear canvas
+        if (this.ctx && this.canvas) {
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+        }
+        
+        // Clear charts data
+        if (this.charts.horizontal) {
+            this.charts.horizontal.data.labels = [];
+            this.charts.horizontal.data.datasets[0].data = [];
+            this.charts.horizontal.update('none');
+        }
+        
+        if (this.charts.vertical) {
+            this.charts.vertical.data.labels = [];
+            this.charts.vertical.data.datasets[0].data = [];
+            this.charts.vertical.update('none');
+        }
+        
+        // Update UI elements
+        if (this.elements.frameSlider) {
+            this.elements.frameSlider.value = 0;
+            this.elements.frameSlider.max = 0;
+        }
+        
+        if (this.elements.frameInfo) {
+            this.elements.frameInfo.textContent = 'Frame: 0 / 0';
+        }
+        
+        if (this.elements.videoInfo) {
+            this.elements.videoInfo.textContent = '0 frames, 0.000 FPS, 0x0';
+        }
+        
+        if (this.elements.playButtonText) {
+            this.elements.playButtonText.textContent = 'Play';
+        }
+        
+        console.log('ThermalIr: Cleanup completed');
+    }
+    
+    /**
+     * Load experiment - MODIFIED: Added abort controller support
      */
     async loadExperiment(experimentId) {
         try {
+            // Prevent overlapping loads
+            if (this.isLoading) {
+                console.log('Already loading thermal IR data, aborting previous request...');
+                this.abort();
+            }
+            
+            // Create new abort controller
+            this.abortController = new AbortController();
+            this.isLoading = true;
+            
             console.log(`Loading thermal data for experiment: ${experimentId}`);
             
             this.state.experimentId = experimentId;
@@ -182,6 +318,11 @@ class ThermalIr {
                 console.log(`Video source set: ${videoUrl}`);
             }
             
+            // Check if aborted
+            if (this.abortController.signal.aborted) {
+                return;
+            }
+            
             // Setup frame slider with initial values (will be updated when video loads)
             this.setupFrameSlider();
             
@@ -191,9 +332,19 @@ class ThermalIr {
             // Setup WebSocket in background (for analysis only)
             this.setupWebSocketBackground();
             
+            this.isLoading = false;
+            
             console.log(`Thermal module loaded for ${experimentId}`);
             
         } catch (error) {
+            this.isLoading = false;
+            
+            // Don't show errors for aborted requests
+            if (error.name === 'AbortError') {
+                console.log('Thermal IR loading was aborted');
+                return;
+            }
+            
             console.error(`Failed to load experiment ${experimentId}:`, error);
             this.showError(`Failed to load experiment: ${error.message}`);
         }
@@ -211,10 +362,10 @@ class ThermalIr {
     }
     
     /**
-     * Setup WebSocket in background - non-blocking
+     * Setup WebSocket in background - MODIFIED: Added abort support
      */
     setupWebSocketBackground() {
-        if (this.webSocket) return; // Already connecting/connected
+        if (this.webSocket || this.abortController?.signal.aborted) return; // Already connecting/connected or aborted
         
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}${this.config.wsEndpoint}`;
@@ -224,23 +375,33 @@ class ThermalIr {
         this.webSocket = new WebSocket(wsUrl);
         
         this.webSocket.onopen = () => {
+            if (this.abortController?.signal.aborted) {
+                this.webSocket.close();
+                return;
+            }
+            
             this.state.wsConnected = true;
             console.log('WebSocket connected');
         };
         
-        this.webSocket.onmessage = (event) => this.handleWebSocketMessage(event);
+        this.webSocket.onmessage = (event) => {
+            if (this.abortController?.signal.aborted) return;
+            this.handleWebSocketMessage(event);
+        };
         
         this.webSocket.onclose = () => {
             this.state.wsConnected = false;
             this.state.engineReady = false;
             console.log('WebSocket disconnected');
             
-            // Auto-reconnect
-            setTimeout(() => {
-                if (this.state.experimentId && !this.state.wsConnected) {
-                    this.setupWebSocketBackground();
-                }
-            }, this.config.reconnectDelay);
+            // Auto-reconnect only if not aborted
+            if (!this.abortController?.signal.aborted && this.state.experimentId) {
+                this.reconnectTimeout = setTimeout(() => {
+                    if (this.state.experimentId && !this.state.wsConnected && !this.abortController?.signal.aborted) {
+                        this.setupWebSocketBackground();
+                    }
+                }, this.config.reconnectDelay);
+            }
         };
         
         this.webSocket.onerror = (error) => {
@@ -650,7 +811,9 @@ class ThermalIr {
      * Debounced analysis request for smooth interactions
      */
     requestAnalysisDebounced() {
-        clearTimeout(this.analysisTimeout);
+        if (this.analysisTimeout) {
+            clearTimeout(this.analysisTimeout);
+        }
         this.analysisTimeout = setTimeout(() => {
             this.requestAnalysis();
         }, 100); // 100ms debounce
@@ -997,14 +1160,39 @@ class ThermalIr {
         if (container) container.style.display = 'none';
     }
     
+    /**
+     * Destroy module - MODIFIED: Enhanced cleanup with proper event listener removal
+     */
     destroy() {
-        // Clear timeouts
-        clearTimeout(this.analysisTimeout);
+        // Abort any ongoing requests and connections
+        this.abort();
         
-        // Clean up WebSocket
-        if (this.webSocket) {
-            this.webSocket.close();
-            this.webSocket = null;
+        // Remove all event listeners
+        if (this.video) {
+            this.video.removeEventListener('timeupdate', this.boundEventHandlers.videoTimeUpdate);
+            this.video.removeEventListener('loadedmetadata', this.boundEventHandlers.videoMetadata);
+            this.video.removeEventListener('canplay', this.boundEventHandlers.videoCanPlay);
+            this.video.removeEventListener('error', this.boundEventHandlers.videoError);
+        }
+        
+        if (this.canvas) {
+            this.canvas.removeEventListener('mousedown', this.boundEventHandlers.mouseDown);
+            this.canvas.removeEventListener('mousemove', this.boundEventHandlers.mouseMove);
+            this.canvas.removeEventListener('mouseup', this.boundEventHandlers.mouseUp);
+        }
+        
+        if (this.elements.playButton) {
+            this.elements.playButton.removeEventListener('click', this.boundEventHandlers.playButton);
+        }
+        
+        if (this.elements.frameSlider) {
+            this.elements.frameSlider.removeEventListener('input', this.boundEventHandlers.frameSliderInput);
+            this.elements.frameSlider.removeEventListener('mousedown', this.boundEventHandlers.frameSliderMouseDown);
+            this.elements.frameSlider.removeEventListener('mouseup', this.boundEventHandlers.frameSliderMouseUp);
+        }
+        
+        if (this.boundEventHandlers.windowResize) {
+            window.removeEventListener('resize', this.boundEventHandlers.windowResize);
         }
         
         // Clean up Chart.js charts
@@ -1033,7 +1221,11 @@ class ThermalIr {
     }
     
     getState() {
-        return { ...this.state, config: this.config };
+        return { 
+            ...this.state, 
+            config: this.config,
+            isLoading: this.isLoading
+        };
     }
 }
 
