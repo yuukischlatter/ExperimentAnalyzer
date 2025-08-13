@@ -2,7 +2,7 @@
  * Video Conversion Service
  * Handles AVI to MP4 conversion for thermal video files using FFmpeg
  * Manages conversion cache, progress tracking, and file serving
- * FIXED: Proper result structure handling
+ * UPDATED: Returns static file paths for Express static serving
  */
 
 const path = require('path');
@@ -23,18 +23,18 @@ class VideoConversionService {
         this.conversionCache = new Map(); // experimentId → conversion info
         this.activeConversions = new Map(); // experimentId → conversion promise
         
-        // Configuration
+        // Configuration - UPDATED: Use cache directory instead of temp
         this.outputFormat = 'mp4';
         this.cacheTimeout = 24 * 60 * 60 * 1000; // 24 hours
-        this.tempDir = config.thermal?.tempDir || path.join(__dirname, '..', 'temp', 'conversions');
+        this.cacheDir = path.join(__dirname, '..', 'cache', 'thermal'); // Static serving directory
         this.maxConcurrentConversions = config.thermal?.maxConcurrentConversions || 2;
         
-        // Ensure temp directory exists
-        this._ensureTempDirectory();
+        // Ensure cache directory exists
+        this._ensureCacheDirectory();
         
         console.log(`${this.serviceName} initialized`);
         console.log(`FFmpeg path: ${ffmpegStatic}`);
-        console.log(`Temp directory: ${this.tempDir}`);
+        console.log(`Cache directory: ${this.cacheDir}`);
     }
 
     /**
@@ -87,76 +87,71 @@ class VideoConversionService {
         }
     }
 
-/**
- * Convert AVI and serve the MP4 file - SIMPLE FIX
- * @param {string} experimentId - Experiment ID  
- * @param {string} aviFilePath - Source AVI file path
- * @returns {Promise<Object>} Direct result with file serving info (bypasses createServiceResult)
- */
-async convertAndServe(experimentId, aviFilePath) {
-    try {
-        const conversionResult = await this.convertAndGetMp4Path(experimentId, aviFilePath);
-        
-        console.log('DEBUG - Conversion result structure:', JSON.stringify(conversionResult, null, 2));
-        
-        if (!conversionResult.success) {
-            return {
-                success: false,
-                message: conversionResult.message,
-                error: conversionResult.error || 'Conversion failed'
-            };
-        }
-
-        // Get MP4 path from result
-        const mp4Path = conversionResult.mp4Path;
-        if (!mp4Path) {
-            console.error('MP4 path missing from conversion result:', conversionResult);
-            return {
-                success: false,
-                message: 'MP4 path not found in conversion result',
-                error: 'Missing mp4Path in result'
-            };
-        }
-
-        // Verify file exists
-        if (!await this._fileExists(mp4Path)) {
-            return {
-                success: false,
-                message: 'Converted MP4 file not found',
-                error: `File not found: ${mp4Path}`
-            };
-        }
-
-        // Get file stats for serving
-        const stats = await fs.stat(mp4Path);
-
-        // DIRECT RETURN - no createServiceResult wrapper
-        return {
-            success: true,
-            message: 'MP4 ready for serving',
-            data: {
-                mp4Path: mp4Path,
-                fileSize: stats.size,
-                convertedAt: conversionResult.convertedAt,
-                fromCache: conversionResult.fromCache || false,
-                servingInfo: {
-                    contentType: 'video/mp4',
-                    contentLength: stats.size,
-                    lastModified: stats.mtime,
-                    acceptRanges: 'bytes' // Enable video seeking
-                }
+    /**
+     * Convert AVI and return static serving info - UPDATED: Return static URL
+     * @param {string} experimentId - Experiment ID  
+     * @param {string} aviFilePath - Source AVI file path
+     * @returns {Promise<Object>} Static serving info for Express static
+     */
+    async convertAndServe(experimentId, aviFilePath) {
+        try {
+            const conversionResult = await this.convertAndGetMp4Path(experimentId, aviFilePath);
+            
+            console.log('DEBUG - Conversion result structure:', JSON.stringify(conversionResult, null, 2));
+            
+            if (!conversionResult.success) {
+                return {
+                    success: false,
+                    message: conversionResult.message,
+                    error: conversionResult.error || 'Conversion failed'
+                };
             }
-        };
 
-    } catch (error) {
-        console.error(`Error in convertAndServe for ${experimentId}:`, error);
-        return {
-            success: false,
-            message: `Serve preparation failed: ${error.message}`,
-            error: error.toString()
-        };
+            // Get MP4 path from result
+            const mp4Path = conversionResult.mp4Path;
+            if (!mp4Path) {
+                console.error('MP4 path missing from conversion result:', conversionResult);
+                return {
+                    success: false,
+                    message: 'MP4 path not found in conversion result',
+                    error: 'Missing mp4Path in result'
+                };
+            }
+
+            // Verify file exists
+            if (!await this._fileExists(mp4Path)) {
+                return {
+                    success: false,
+                    message: 'Converted MP4 file not found',
+                    error: `File not found: ${mp4Path}`
+                };
+            }
+
+            // Get file stats for serving
+            const stats = await fs.stat(mp4Path);
+
+            // UPDATED: Return static URL instead of streaming info
+            return {
+                success: true,
+                message: 'MP4 ready for static serving',
+                data: {
+                    staticUrl: `/cache/thermal/${experimentId}.mp4`,  // Static URL for Express
+                    mp4Path: mp4Path,                                 // Local file path
+                    fileSize: stats.size,
+                    convertedAt: conversionResult.convertedAt,
+                    fromCache: conversionResult.fromCache || false
+                }
+            };
+
+        } catch (error) {
+            console.error(`Error in convertAndServe for ${experimentId}:`, error);
+            return {
+                success: false,
+                message: `Serve preparation failed: ${error.message}`,
+                error: error.toString()
+            };
+        }
     }
-}
 
     /**
      * Get conversion status for an experiment
@@ -181,7 +176,8 @@ async convertAndServe(experimentId, aviFilePath) {
                 experimentId: experimentId,
                 convertedAt: cached.convertedAt,
                 fileSize: cached.fileSize,
-                mp4Path: cached.mp4Path
+                mp4Path: cached.mp4Path,
+                staticUrl: `/cache/thermal/${experimentId}.mp4`
             };
         }
 
@@ -250,7 +246,8 @@ async convertAndServe(experimentId, aviFilePath) {
                 convertedAt: cached.convertedAt,
                 fileSize: cached.fileSize,
                 fileSizeMB: (cached.fileSize / 1024 / 1024).toFixed(1),
-                mp4File: path.basename(cached.mp4Path)
+                mp4File: path.basename(cached.mp4Path),
+                staticUrl: `/cache/thermal/${experimentId}.mp4`
             });
         }
 
@@ -258,7 +255,7 @@ async convertAndServe(experimentId, aviFilePath) {
             serviceName: this.serviceName,
             status: 'active',
             ffmpegPath: ffmpegStatic,
-            tempDirectory: this.tempDir,
+            cacheDirectory: this.cacheDir,
             cache: {
                 totalConversions: this.conversionCache.size,
                 activeConversions: this.activeConversions.size,
@@ -268,14 +265,14 @@ async convertAndServe(experimentId, aviFilePath) {
             configuration: {
                 outputFormat: this.outputFormat,
                 maxConcurrentConversions: this.maxConcurrentConversions,
-                tempDir: this.tempDir
+                cacheDir: this.cacheDir
             },
             capabilities: {
                 inputFormats: ['.avi'],
                 outputFormat: this.outputFormat,
                 videoCodec: 'libx264',
                 audioCodec: 'aac',
-                rangeRequests: true
+                staticServing: true
             }
         };
     }
@@ -297,9 +294,9 @@ async convertAndServe(experimentId, aviFilePath) {
                 throw new Error(`Source AVI file not found: ${aviFilePath}`);
             }
 
-            // Generate output path
-            const mp4FileName = `${experimentId}_thermal.mp4`;
-            const mp4Path = path.join(this.tempDir, mp4FileName);
+            // Generate output path - UPDATED: Use cache directory
+            const mp4FileName = `${experimentId}.mp4`;
+            const mp4Path = path.join(this.cacheDir, mp4FileName);
 
             // Check if output already exists (shouldn't happen due to cache check, but safety)
             if (await this._fileExists(mp4Path)) {
@@ -419,14 +416,14 @@ async convertAndServe(experimentId, aviFilePath) {
     }
 
     /**
-     * Ensure temp directory exists
+     * Ensure cache directory exists - UPDATED: Use cache directory
      * @private
      */
-    async _ensureTempDirectory() {
+    async _ensureCacheDirectory() {
         try {
-            await fs.mkdir(this.tempDir, { recursive: true });
+            await fs.mkdir(this.cacheDir, { recursive: true });
         } catch (error) {
-            console.error(`Failed to create temp directory ${this.tempDir}:`, error);
+            console.error(`Failed to create cache directory ${this.cacheDir}:`, error);
         }
     }
 

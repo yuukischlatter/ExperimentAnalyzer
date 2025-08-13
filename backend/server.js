@@ -2,12 +2,14 @@
  * Experiment Analyzer - Node.js Backend Server
  * Main entry point (equivalent to C# Program.cs)
  * Enhanced with WebSocket support for thermal analysis
+ * UPDATED: Added Express static serving for thermal videos
  */
 
 const express = require('express');
 const path = require('path');
 const cors = require('cors');
 const WebSocket = require('ws');
+const fs = require('fs');
 const config = require('./config/config');
 
 // Import middleware
@@ -52,6 +54,27 @@ async function createApp() {
         });
     }
 
+    // ===== THERMAL VIDEO STATIC SERVING =====
+    // Create thermal cache directory if it doesn't exist
+    const thermalCacheDir = path.join(__dirname, 'cache', 'thermal');
+    if (!fs.existsSync(thermalCacheDir)) {
+        fs.mkdirSync(thermalCacheDir, { recursive: true });
+        console.log(`✓ Created thermal cache directory: ${thermalCacheDir}`);
+    }
+
+    // Serve thermal videos statically (Express handles all file access properly)
+    app.use('/cache/thermal', express.static(thermalCacheDir, {
+        maxAge: '1h',           // Cache for 1 hour
+        etag: true,             // Enable ETags for proper caching
+        lastModified: true,     // Enable Last-Modified headers
+        acceptRanges: true,     // Enable range requests for video seeking
+        cacheControl: true,     // Enable Cache-Control headers
+        immutable: false        // Files can be updated
+    }));
+
+    console.log(`✓ Thermal video static serving enabled: /cache/thermal -> ${thermalCacheDir}`);
+    // ===== END THERMAL VIDEO STATIC SERVING =====
+
     // API Routes
     app.use('/api/experiments', experimentsRouter);
 
@@ -62,23 +85,25 @@ async function createApp() {
             data: {
                 status: 'healthy',
                 timestamp: new Date().toISOString(),
-                version: require('./package.json').version
+                version: require('./package.json').version,
+                thermalCacheEnabled: true,
+                thermalCacheDir: thermalCacheDir
             }
         });
     });
 
     // Serve frontend static files (equivalent to C# UseStaticFiles)
     const frontendPath = config.frontend.path;
-    if (require('fs').existsSync(frontendPath)) {
+    if (fs.existsSync(frontendPath)) {
         console.log(`Serving frontend files from: ${frontendPath}`);
         app.use(express.static(frontendPath, config.frontend.staticOptions));
         
         // SPA fallback - serve index.html for non-API routes
         app.get('*', (req, res) => {
-            if (!req.url.startsWith('/api/')) {
+            if (!req.url.startsWith('/api/') && !req.url.startsWith('/cache/')) {
                 res.sendFile(path.join(frontendPath, 'index.html'));
             } else {
-                res.status(404).json({ success: false, error: 'API endpoint not found' });
+                res.status(404).json({ success: false, error: 'Endpoint not found' });
             }
         });
     } else {
@@ -152,8 +177,10 @@ async function startServer() {
         const serverInstance = server.listen(config.server.port, config.server.host, () => {
             console.log(`Server running on http://${config.server.host}:${config.server.port}`);
             console.log(`WebSocket endpoint: ws://${config.server.host}:${config.server.port}/thermal-ws`);
+            console.log(`Thermal video cache: http://${config.server.host}:${config.server.port}/cache/thermal/`);
             console.log(`Experiment Analyzer ready for use!`);
             console.log(`🔥 Thermal analysis WebSocket server active`);
+            console.log(`📹 Thermal video static serving active`);
         });
 
         // Setup periodic cleanup for WebSocket service
@@ -190,12 +217,13 @@ async function startServer() {
         process.on('SIGTERM', () => shutdown('SIGTERM'));
         process.on('SIGINT', () => shutdown('SIGINT'));
 
-        // Log WebSocket server status
-        console.log('📊 WebSocket Server Status:');
-        console.log(`   Path: /thermal-ws`);
-        console.log(`   Max Connections: Unlimited`);
-        console.log(`   Cleanup Interval: 60 seconds`);
-        console.log(`   Supported Messages: loadVideo, analyzeLines, pixelTemperature`);
+        // Log server status
+        console.log('📊 Server Status:');
+        console.log(`   HTTP: http://${config.server.host}:${config.server.port}`);
+        console.log(`   WebSocket: ws://${config.server.host}:${config.server.port}/thermal-ws`);
+        console.log(`   Thermal Cache: /cache/thermal/`);
+        console.log(`   Frontend: ${config.frontend.path}`);
+        console.log(`   Database: ${config.database.fullPath}`);
 
     } catch (error) {
         console.error('Failed to start server:', error);

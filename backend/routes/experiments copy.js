@@ -336,9 +336,7 @@ router.get('/:experimentId', async (req, res) => {
 
 // #endregion
 
-
 ...
-
 
 // #region THERMAL DATA ROUTES
 
@@ -465,11 +463,14 @@ router.post('/:experimentId/thermal/pixel-temperature', async (req, res) => {
 
 /**
  * GET /api/experiments/:experimentId/thermal/video
- * Serve converted MP4 file for browser playback (placeholder for future implementation)
+ * Serve MP4 video file (converted from AVI) for browser playback
+ * UPDATED: Handle direct result structure (no createServiceResult wrapper)
  */
 router.get('/:experimentId/thermal/video', async (req, res) => {
     try {
         const { experimentId } = req.params;
+
+        console.log(`Serving thermal video for experiment: ${experimentId}`);
 
         // Check if thermal file exists
         const hasThermal = await thermalService.hasThermalFile(experimentId);
@@ -477,17 +478,119 @@ router.get('/:experimentId/thermal/video', async (req, res) => {
             return res.error(`No thermal file found for experiment ${experimentId}`, 404);
         }
 
-        // For now, return file info (video serving would require FFmpeg conversion)
-        res.success({
-            experimentId: experimentId,
-            message: 'Video serving not yet implemented',
-            availableFile: hasThermal.filePath,
-            note: 'Use WebSocket for real-time analysis, video serving requires FFmpeg conversion'
+        // Initialize video conversion service
+        const VideoConversionService = require('../services/VideoConversionService');
+        const conversionService = new VideoConversionService();
+
+        // Convert AVI to MP4 and get serving info
+        const conversionResult = await conversionService.convertAndServe(experimentId, hasThermal.filePath);
+
+        console.log('DEBUG - Full conversion result:', JSON.stringify(conversionResult, null, 2));
+
+        if (!conversionResult.success) {
+            console.error(`Video conversion failed for ${experimentId}:`, conversionResult.message);
+            return res.error(`Video conversion failed: ${conversionResult.message}`, 500);
+        }
+
+        // UPDATED: Handle direct structure (data should be directly in conversionResult.data)
+        if (!conversionResult.data || !conversionResult.data.mp4Path) {
+            console.error('MP4 path missing from conversion result:', conversionResult);
+            return res.error('MP4 path not found in conversion result', 500);
+        }
+
+        const { mp4Path, servingInfo } = conversionResult.data;
+
+        // Verify file exists
+        const fs = require('fs');
+        if (!fs.existsSync(mp4Path)) {
+            console.error(`Converted MP4 file not found: ${mp4Path}`);
+            return res.error('Converted MP4 file not found', 500);
+        }
+
+        console.log(`✅ Found MP4 file: ${mp4Path} (${(servingInfo.contentLength / 1024 / 1024).toFixed(1)}MB)`);
+
+        // Set proper headers for video streaming
+        res.set({
+            'Content-Type': servingInfo.contentType,
+            'Content-Length': servingInfo.contentLength,
+            'Accept-Ranges': servingInfo.acceptRanges,
+            'Last-Modified': servingInfo.lastModified.toUTCString(),
+            'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
         });
+
+        // Handle range requests (for video seeking)
+        const range = req.headers.range;
+        if (range) {
+            const parts = range.replace(/bytes=/, "").split("-");
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : servingInfo.contentLength - 1;
+            const chunkSize = (end - start) + 1;
+
+            res.status(206); // Partial Content
+            res.set({
+                'Content-Range': `bytes ${start}-${end}/${servingInfo.contentLength}`,
+                'Content-Length': chunkSize
+            });
+
+            // Stream the requested range
+            const stream = fs.createReadStream(mp4Path, { start, end });
+            
+            stream.on('error', (error) => {
+                console.error(`Error streaming partial video ${mp4Path}:`, error);
+                if (!res.headersSent) {
+                    res.error('Failed to stream video range', 500);
+                }
+            });
+
+            stream.pipe(res);
+        } else {
+            // Stream entire file
+            const stream = fs.createReadStream(mp4Path);
+            
+            stream.on('error', (error) => {
+                console.error(`Error streaming thermal video ${mp4Path}:`, error);
+                if (!res.headersSent) {
+                    res.error('Failed to stream video', 500);
+                }
+            });
+
+            stream.pipe(res);
+        }
+
+        console.log(`Serving thermal video: ${experimentId} (${(servingInfo.contentLength / 1024 / 1024).toFixed(1)}MB)`);
 
     } catch (error) {
         console.error(`Error serving thermal video for ${req.params.experimentId}:`, error);
-        res.error(`Failed to serve thermal video: ${error.message}`, 500);
+        if (!res.headersSent) {
+            res.error(`Failed to serve thermal video: ${error.message}`, 500);
+        }
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/thermal/conversion-status
+ * Get video conversion status
+ */
+router.get('/:experimentId/thermal/conversion-status', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        // Initialize video conversion service
+        const VideoConversionService = require('../services/VideoConversionService');
+        const conversionService = new VideoConversionService();
+
+        // Get conversion status
+        const status = conversionService.getConversionStatus(experimentId);
+
+        res.success({
+            experimentId: experimentId,
+            ...status,
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error getting conversion status for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get conversion status: ${error.message}`, 500);
     }
 });
 
@@ -501,7 +604,13 @@ router.delete('/:experimentId/thermal-cache', async (req, res) => {
 
         console.log(`Clearing thermal cache for experiment: ${experimentId}`);
 
+        // Clear thermal service cache
         thermalService.clearCache(experimentId);
+
+        // Clear video conversion cache
+        const VideoConversionService = require('../services/VideoConversionService');
+        const conversionService = new VideoConversionService();
+        await conversionService.clearConversionCache(experimentId);
 
         res.success({
             message: `Thermal cache cleared for experiment ${experimentId}`,
@@ -523,8 +632,14 @@ router.get('/thermal-service/status', async (req, res) => {
     try {
         const serviceStatus = thermalService.getServiceStatus();
         
+        // Also get video conversion service status
+        const VideoConversionService = require('../services/VideoConversionService');
+        const conversionService = new VideoConversionService();
+        const conversionStatus = conversionService.getServiceStatus();
+        
         res.success({
-            ...serviceStatus,
+            thermalParser: serviceStatus,
+            videoConversion: conversionStatus,
             timestamp: new Date().toISOString()
         });
 
@@ -542,10 +657,18 @@ router.post('/thermal-service/clear-all-cache', async (req, res) => {
     try {
         console.log('Clearing all thermal parser cache...');
 
+        // Clear thermal service cache
         thermalService.clearAllCache();
+
+        // Clear video conversion cache
+        const VideoConversionService = require('../services/VideoConversionService');
+        const conversionService = new VideoConversionService();
+        const clearedConversions = await conversionService.clearAllCache();
 
         res.success({
             message: 'All thermal parser cache cleared successfully',
+            thermalCacheCleared: true,
+            conversionsCleared: clearedConversions,
             clearedAt: new Date().toISOString()
         });
 
@@ -581,6 +704,11 @@ router.get('/:experimentId/thermal-file-info', async (req, res) => {
         const path = require('path');
         const stats = await fs.stat(hasThermalResult.filePath);
 
+        // Get conversion status
+        const VideoConversionService = require('../services/VideoConversionService');
+        const conversionService = new VideoConversionService();
+        const conversionStatus = conversionService.getConversionStatus(experimentId);
+
         res.success({
             experimentId: experimentId,
             hasFile: true,
@@ -591,7 +719,8 @@ router.get('/:experimentId/thermal-file-info', async (req, res) => {
             fileSizeMB: (stats.size / 1024 / 1024).toFixed(1),
             lastModified: stats.mtime,
             created: stats.birthtime,
-            foundFiles: hasThermalResult.foundFiles || [path.basename(hasThermalResult.filePath)]
+            foundFiles: hasThermalResult.foundFiles || [path.basename(hasThermalResult.filePath)],
+            conversionStatus: conversionStatus
         });
 
     } catch (error) {

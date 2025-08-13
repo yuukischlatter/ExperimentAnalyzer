@@ -44,6 +44,16 @@ const config = {
             maxAge: process.env.NODE_ENV === 'production' ? '1d' : '0',
             etag: true
         }
+    },
+
+    // Thermal Analysis Configuration - ADDED
+    thermal: {
+        // Cache directory for converted thermal videos
+        cacheDir: process.env.THERMAL_CACHE_DIR || path.join(process.cwd(), 'cache', 'thermal'),
+        // Maximum concurrent video conversions
+        maxConcurrentConversions: parseInt(process.env.THERMAL_MAX_CONVERSIONS || '2'),
+        // Cache timeout (24 hours by default)
+        cacheTimeoutHours: parseInt(process.env.THERMAL_CACHE_TIMEOUT_HOURS || '24')
     }
 };
 
@@ -60,6 +70,15 @@ function validateConfig() {
     const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
     if (!dateRegex.test(config.experiments.validDateFrom)) {
         errors.push('EXPERIMENT_VALID_DATE_FROM must be in YYYY-MM-DD format');
+    }
+
+    // Validate thermal configuration
+    if (config.thermal.maxConcurrentConversions < 1) {
+        errors.push('THERMAL_MAX_CONVERSIONS must be at least 1');
+    }
+
+    if (config.thermal.cacheTimeoutHours < 1) {
+        errors.push('THERMAL_CACHE_TIMEOUT_HOURS must be at least 1');
     }
 
     if (errors.length > 0) {

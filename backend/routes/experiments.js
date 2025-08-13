@@ -3594,8 +3594,8 @@ router.post('/:experimentId/thermal/pixel-temperature', async (req, res) => {
 
 /**
  * GET /api/experiments/:experimentId/thermal/video
- * Serve MP4 video file (converted from AVI) for browser playback
- * UPDATED: Handle direct result structure (no createServiceResult wrapper)
+ * Serve MP4 video file via Express static serving (redirect)
+ * UPDATED: Simplified to use Express static middleware instead of custom streaming
  */
 router.get('/:experimentId/thermal/video', async (req, res) => {
     try {
@@ -3613,7 +3613,7 @@ router.get('/:experimentId/thermal/video', async (req, res) => {
         const VideoConversionService = require('../services/VideoConversionService');
         const conversionService = new VideoConversionService();
 
-        // Convert AVI to MP4 and get serving info
+        // Convert AVI to MP4 and get static serving URL
         const conversionResult = await conversionService.convertAndServe(experimentId, hasThermal.filePath);
 
         console.log('DEBUG - Full conversion result:', JSON.stringify(conversionResult, null, 2));
@@ -3623,78 +3623,22 @@ router.get('/:experimentId/thermal/video', async (req, res) => {
             return res.error(`Video conversion failed: ${conversionResult.message}`, 500);
         }
 
-        // UPDATED: Handle direct structure (data should be directly in conversionResult.data)
-        if (!conversionResult.data || !conversionResult.data.mp4Path) {
-            console.error('MP4 path missing from conversion result:', conversionResult);
-            return res.error('MP4 path not found in conversion result', 500);
+        // Get static URL from conversion result
+        if (!conversionResult.data || !conversionResult.data.staticUrl) {
+            console.error('Static URL missing from conversion result:', conversionResult);
+            return res.error('Static URL not found in conversion result', 500);
         }
 
-        const { mp4Path, servingInfo } = conversionResult.data;
+        const { staticUrl } = conversionResult.data;
 
-        // Verify file exists
-        const fs = require('fs');
-        if (!fs.existsSync(mp4Path)) {
-            console.error(`Converted MP4 file not found: ${mp4Path}`);
-            return res.error('Converted MP4 file not found', 500);
-        }
+        console.log(`✅ Redirecting to static thermal video: ${staticUrl}`);
 
-        console.log(`✅ Found MP4 file: ${mp4Path} (${(servingInfo.contentLength / 1024 / 1024).toFixed(1)}MB)`);
-
-        // Set proper headers for video streaming
-        res.set({
-            'Content-Type': servingInfo.contentType,
-            'Content-Length': servingInfo.contentLength,
-            'Accept-Ranges': servingInfo.acceptRanges,
-            'Last-Modified': servingInfo.lastModified.toUTCString(),
-            'Cache-Control': 'public, max-age=3600', // Cache for 1 hour
-        });
-
-        // Handle range requests (for video seeking)
-        const range = req.headers.range;
-        if (range) {
-            const parts = range.replace(/bytes=/, "").split("-");
-            const start = parseInt(parts[0], 10);
-            const end = parts[1] ? parseInt(parts[1], 10) : servingInfo.contentLength - 1;
-            const chunkSize = (end - start) + 1;
-
-            res.status(206); // Partial Content
-            res.set({
-                'Content-Range': `bytes ${start}-${end}/${servingInfo.contentLength}`,
-                'Content-Length': chunkSize
-            });
-
-            // Stream the requested range
-            const stream = fs.createReadStream(mp4Path, { start, end });
-            
-            stream.on('error', (error) => {
-                console.error(`Error streaming partial video ${mp4Path}:`, error);
-                if (!res.headersSent) {
-                    res.error('Failed to stream video range', 500);
-                }
-            });
-
-            stream.pipe(res);
-        } else {
-            // Stream entire file
-            const stream = fs.createReadStream(mp4Path);
-            
-            stream.on('error', (error) => {
-                console.error(`Error streaming thermal video ${mp4Path}:`, error);
-                if (!res.headersSent) {
-                    res.error('Failed to stream video', 500);
-                }
-            });
-
-            stream.pipe(res);
-        }
-
-        console.log(`✅ Serving thermal video: ${experimentId} (${(servingInfo.contentLength / 1024 / 1024).toFixed(1)}MB)`);
+        // Redirect to Express static serving URL
+        res.redirect(staticUrl);
 
     } catch (error) {
         console.error(`Error serving thermal video for ${req.params.experimentId}:`, error);
-        if (!res.headersSent) {
-            res.error(`Failed to serve thermal video: ${error.message}`, 500);
-        }
+        res.error(`Failed to serve thermal video: ${error.message}`, 500);
     }
 });
 
