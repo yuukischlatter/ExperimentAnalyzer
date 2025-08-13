@@ -5,7 +5,7 @@
 /**
  * Thermal IR Module - Styling
  * Interactive thermal video analysis with real-time WebSocket integration
- * Layout: Video + vertical chart (top), status (middle), horizontal chart (bottom)
+ * Layout: Video + vertical chart (top), horizontal chart (bottom)
  * Colors: Fire theme with Schlatter blue accents
  * UPDATED: Uses generic .module-content for folding compatibility
  */
@@ -76,10 +76,9 @@
     display: grid;
     grid-template-areas: 
         "video vertical-chart"
-        "status status"
         "horizontal horizontal";
-    grid-template-columns: 1fr 350px;
-    grid-template-rows: auto auto 280px;
+    grid-template-columns: 550px 350px;
+    grid-template-rows: auto auto;
     gap: var(--spacing-lg);
     padding: var(--spacing-lg);
     background-color: var(--bg-white);
@@ -125,9 +124,10 @@
     background: #000000;
     border-radius: var(--border-radius-sm);
     overflow: hidden;
-    aspect-ratio: 908 / 1200; /* Thermal video aspect ratio */
+    aspect-ratio: 908 / 1200; /* Exact thermal video aspect ratio */
     width: 100%;
-    max-height: 60vh;
+    max-width: 550px; /* Prevent video from becoming too large */
+    max-height: 650px; /* Maintain reasonable size on all desktop screens */
     transition: all var(--transition-slow);
 }
 
@@ -142,7 +142,7 @@
     width: 100%;
     height: 100%;
     display: block;
-    object-fit: contain;
+    object-fit: cover; /* Changed from contain to cover to fill container */
     background: #000000;
     transition: opacity var(--transition-normal);
 }
@@ -275,6 +275,8 @@
     border-radius: var(--border-radius);
     padding: var(--spacing-md);
     transition: all var(--transition-slow);
+    height: 520px; /* Fixed height to better match video area */
+    min-height: 520px; /* Ensure adequate height for chart */
 }
 
 .horizontal-chart-section {
@@ -284,6 +286,8 @@
     border-radius: var(--border-radius);
     padding: var(--spacing-md);
     transition: all var(--transition-slow);
+    width: 550px; /* Match video container max-width exactly */
+    justify-self: start; /* Align to start of grid area */
 }
 
 .foldable-module.collapsed .vertical-chart-section,
@@ -360,7 +364,7 @@
 }
 
 .vertical-plot {
-    height: 300px; /* Taller for vertical chart */
+    height: 420px; /* Increased height to better utilize available vertical space */
 }
 
 .horizontal-plot {
@@ -378,95 +382,6 @@
     min-height: 0 !important;
     margin: 0 !important;
     overflow: hidden !important;
-}
-
-/* === CONNECTION STATUS SECTION === */
-.connection-status-section {
-    grid-area: status;
-    background-color: var(--bg-section);
-    border: 1px solid var(--border-light);
-    border-radius: var(--border-radius);
-    padding: var(--spacing-md);
-    transition: all var(--transition-slow);
-}
-
-.foldable-module.collapsed .connection-status-section {
-    height: 0 !important;
-    min-height: 0 !important;
-    padding: 0 !important;
-    margin: 0 !important;
-    border: none !important;
-    overflow: hidden !important;
-}
-
-.status-indicators {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
-
-.status-group {
-    display: flex;
-    gap: var(--spacing-lg);
-}
-
-/* === STATUS INDICATORS === */
-.status-indicator {
-    display: flex;
-    align-items: center;
-    gap: var(--spacing-sm);
-}
-
-.status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    transition: background-color var(--transition-fast);
-}
-
-/* Status dot colors */
-.status-indicator[data-status="connected"] .status-dot,
-.status-indicator[data-status="ready"] .status-dot,
-.status-indicator[data-status="loaded"] .status-dot {
-    background-color: var(--status-success);
-}
-
-.status-indicator[data-status="disconnected"] .status-dot,
-.status-indicator[data-status="not-ready"] .status-dot,
-.status-indicator[data-status="not-loaded"] .status-dot,
-.status-indicator[data-status="error"] .status-dot {
-    background-color: var(--status-error);
-}
-
-.status-indicator[data-status="connecting"] .status-dot,
-.status-indicator[data-status="loading"] .status-dot {
-    background-color: var(--status-warning);
-    animation: pulse 2s infinite;
-}
-
-.status-label {
-    font-size: var(--font-sm);
-    font-weight: var(--font-medium);
-    color: var(--text-secondary);
-    min-width: 80px;
-}
-
-.status-text {
-    font-size: var(--font-sm);
-    color: var(--text-primary);
-}
-
-/* Status pulse animation */
-@keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-}
-
-.analysis-info {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 2px;
 }
 
 /* === STATE SECTIONS === */

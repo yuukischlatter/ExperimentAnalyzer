@@ -15,6 +15,8 @@ class ThermalIr {
             wsConnected: false,
             engineReady: false,
             currentFrame: 0,
+            totalFrames: 3674, // Actual frame count
+            fps: 14.108, // Actual FPS
             isPlaying: false,
             
             // Line positions
@@ -50,7 +52,9 @@ class ThermalIr {
                 line2: '#059669', // Vertical (green)
                 grid: 'rgba(0, 50, 120, 0.1)'
             },
-            videoAspectRatio: 908/1200,
+            videoAspectRatio: 908/1200, // Exact aspect ratio
+            videoWidth: 908,
+            videoHeight: 1200,
             dragThreshold: 15,
             reconnectDelay: 3000
         };
@@ -114,8 +118,8 @@ class ThermalIr {
         if (this.video) {
             this.video.addEventListener('timeupdate', () => this.handleVideoTimeUpdate());
             this.video.addEventListener('loadedmetadata', () => this.handleVideoMetadata());
-            this.video.addEventListener('canplay', () => this.updateVideoStatus('loaded'));
-            this.video.addEventListener('error', () => this.updateVideoStatus('error'));
+            this.video.addEventListener('canplay', () => console.log('Video ready to play'));
+            this.video.addEventListener('error', () => console.error('Video loading error'));
         }
         
         // Canvas events - work immediately (no WebSocket dependency)
@@ -132,6 +136,12 @@ class ThermalIr {
         
         if (this.elements.frameSlider) {
             this.elements.frameSlider.addEventListener('input', (e) => this.handleFrameSlider(e));
+            this.elements.frameSlider.addEventListener('mousedown', () => {
+                this.elements.frameSlider.dataset.dragging = 'true';
+            });
+            this.elements.frameSlider.addEventListener('mouseup', () => {
+                delete this.elements.frameSlider.dataset.dragging;
+            });
         }
     }
     
@@ -153,9 +163,11 @@ class ThermalIr {
             if (this.video) {
                 const videoUrl = `${this.config.apiBaseUrl}/experiments/${experimentId}/thermal/video`;
                 this.video.src = videoUrl;
-                this.updateVideoStatus('loading');
                 console.log(`Video source set: ${videoUrl}`);
             }
+            
+            // Setup frame slider with correct values
+            this.setupFrameSlider();
             
             // Setup canvas immediately (independent of video/WebSocket)
             this.setupCanvas();
@@ -169,6 +181,17 @@ class ThermalIr {
             console.error(`Failed to load experiment ${experimentId}:`, error);
             this.showError(`Failed to load experiment: ${error.message}`);
         }
+    }
+    
+    /**
+     * Setup frame slider with correct frame count
+     */
+    setupFrameSlider() {
+        if (this.elements.frameSlider) {
+            this.elements.frameSlider.max = this.state.totalFrames;
+            this.elements.frameSlider.value = 0;
+        }
+        this.updateFrameInfo(0);
     }
     
     /**
@@ -186,7 +209,6 @@ class ThermalIr {
         
         this.webSocket.onopen = () => {
             this.state.wsConnected = true;
-            this.updateConnectionStatus();
             console.log('WebSocket connected');
         };
         
@@ -195,7 +217,6 @@ class ThermalIr {
         this.webSocket.onclose = () => {
             this.state.wsConnected = false;
             this.state.engineReady = false;
-            this.updateConnectionStatus();
             console.log('WebSocket disconnected');
             
             // Auto-reconnect
@@ -208,7 +229,6 @@ class ThermalIr {
         
         this.webSocket.onerror = (error) => {
             console.error('WebSocket error:', error);
-            this.updateConnectionStatus();
         };
     }
     
@@ -232,7 +252,6 @@ class ThermalIr {
                     
                 case 'error':
                     console.error('WebSocket error:', message.data.message);
-                    this.updateAnalysisInfo(`Error: ${message.data.message}`);
                     break;
             }
         } catch (error) {
@@ -258,13 +277,17 @@ class ThermalIr {
         console.log('Thermal engine ready:', data);
         
         this.state.engineReady = true;
-        this.updateConnectionStatus();
         
-        // Update video info if available
-        if (this.elements.videoInfo && data.metadata?.videoInfo) {
+        // Update video info if available from engine
+        if (data.metadata?.videoInfo) {
             const info = data.metadata.videoInfo;
-            this.elements.videoInfo.textContent = 
-                `${info.frames} frames, ${info.fps} FPS, ${info.width}x${info.height}`;
+            this.state.totalFrames = info.frames || 3674;
+            this.state.fps = info.fps || 14.108;
+            
+            // Update slider max value
+            if (this.elements.frameSlider) {
+                this.elements.frameSlider.max = this.state.totalFrames;
+            }
         }
     }
     
@@ -294,28 +317,43 @@ class ThermalIr {
     adjustCanvasSize() {
         if (!this.canvas || !this.video) return;
         
-        const videoContainer = this.video.parentElement.getBoundingClientRect();
-        const videoAspectRatio = this.config.videoAspectRatio;
-        const containerAspectRatio = videoContainer.width / videoContainer.height;
+        const videoContainer = this.video.parentElement;
+        const containerRect = videoContainer.getBoundingClientRect();
         
-        let displayWidth, displayHeight;
+        // Calculate proper dimensions maintaining 908:1200 aspect ratio
+        const aspectRatio = this.config.videoAspectRatio;
         
-        if (containerAspectRatio > videoAspectRatio) {
-            displayHeight = videoContainer.height;
-            displayWidth = displayHeight * videoAspectRatio;
+        let canvasWidth, canvasHeight;
+        
+        // Apply max constraints first
+        let availableWidth = Math.min(containerRect.width, 550); // Match CSS max-width
+        let availableHeight = Math.min(containerRect.height, 650); // Match CSS max-height
+        
+        // Use aspect ratio to determine final size
+        if (availableWidth / availableHeight > aspectRatio) {
+            // Container is wider - fit to height
+            canvasHeight = availableHeight;
+            canvasWidth = canvasHeight * aspectRatio;
         } else {
-            displayWidth = videoContainer.width;
-            displayHeight = displayWidth / videoAspectRatio;
+            // Container is taller - fit to width
+            canvasWidth = availableWidth;
+            canvasHeight = canvasWidth / aspectRatio;
         }
         
-        this.canvas.width = displayWidth;
-        this.canvas.height = displayHeight;
+        // Set canvas size
+        this.canvas.width = canvasWidth;
+        this.canvas.height = canvasHeight;
         
-        const leftOffset = (videoContainer.width - displayWidth) / 2;
-        const topOffset = (videoContainer.height - displayHeight) / 2;
+        // Center canvas in container
+        const leftOffset = (containerRect.width - canvasWidth) / 2;
+        const topOffset = (containerRect.height - canvasHeight) / 2;
         
         this.canvas.style.left = leftOffset + 'px';
         this.canvas.style.top = topOffset + 'px';
+        this.canvas.style.width = canvasWidth + 'px';
+        this.canvas.style.height = canvasHeight + 'px';
+        
+        console.log(`Canvas sized: ${canvasWidth}x${canvasHeight}, offset: ${leftOffset},${topOffset}`);
     }
     
     initializeDefaultLines() {
@@ -324,7 +362,7 @@ class ThermalIr {
         const width = this.canvas.width;
         const height = this.canvas.height;
         
-        // Horizontal line (blue)
+        // Horizontal line (blue) - centered horizontally
         this.state.line1 = {
             x1: width * 0.1,
             y1: height * 0.5,
@@ -332,7 +370,7 @@ class ThermalIr {
             y2: height * 0.5
         };
         
-        // Vertical line (green)
+        // Vertical line (green) - centered vertically
         this.state.line2 = {
             x1: width * 0.5,
             y1: height * 0.1,
@@ -340,16 +378,21 @@ class ThermalIr {
             y2: height * 0.9
         };
         
-        this.drawLines();
+        console.log('Default lines initialized');
     }
     
     /**
-     * Mouse event handlers - work immediately
+     * Mouse event handlers - improved coordinate handling
      */
     handleMouseDown(event) {
+        if (!this.canvas) return;
+        
         const rect = this.canvas.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
+        
+        const x = (event.clientX - rect.left) * scaleX;
+        const y = (event.clientY - rect.top) * scaleY;
         
         const nearestEndpoint = this.getNearestEndpoint(x, y);
         if (nearestEndpoint) {
@@ -360,9 +403,14 @@ class ThermalIr {
     }
     
     handleMouseMove(event) {
+        if (!this.canvas) return;
+        
         const rect = this.canvas.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
+        const scaleX = this.canvas.width / rect.width;
+        const scaleY = this.canvas.height / rect.height;
+        
+        const x = (event.clientX - rect.left) * scaleX;
+        const y = (event.clientY - rect.top) * scaleY;
         
         if (this.state.dragging) {
             const constrainedX = Math.max(0, Math.min(this.canvas.width - 1, x));
@@ -478,13 +526,13 @@ class ThermalIr {
     handleVideoTimeUpdate() {
         if (!this.video || this.video.duration === 0) return;
         
-        // Estimate current frame (will be more accurate when engine is ready)
-        const fps = 14.12; // Default thermal video FPS
-        const currentFrame = Math.floor(this.video.currentTime * fps);
+        // Calculate current frame using actual FPS
+        const currentFrame = Math.floor(this.video.currentTime * this.state.fps);
         this.state.currentFrame = currentFrame;
         
         this.updateFrameInfo(currentFrame);
         
+        // Update slider if not being dragged by user
         if (this.elements.frameSlider && !this.elements.frameSlider.dataset.dragging) {
             this.elements.frameSlider.value = currentFrame;
         }
@@ -493,13 +541,12 @@ class ThermalIr {
     }
     
     handleVideoMetadata() {
+        // Recalculate canvas size when video metadata is loaded
         setTimeout(() => {
             this.adjustCanvasSize();
             this.initializeDefaultLines();
             this.drawLines();
         }, 100);
-        
-        this.updateVideoStatus('loaded');
     }
     
     handleFrameSlider(event) {
@@ -511,8 +558,7 @@ class ThermalIr {
     seekToFrame(frameNumber) {
         if (!this.video) return;
         
-        const fps = 14.12; // Will use actual FPS when available
-        const time = frameNumber / fps;
+        const time = frameNumber / this.state.fps;
         this.video.currentTime = time;
         this.state.currentFrame = frameNumber;
         this.updateFrameInfo(frameNumber);
@@ -520,9 +566,7 @@ class ThermalIr {
     
     updateFrameInfo(frameNumber) {
         if (this.elements.frameInfo) {
-            const total = this.video && this.video.duration ? 
-                         Math.floor(this.video.duration * 14.12) : 0;
-            this.elements.frameInfo.textContent = `Frame: ${frameNumber} / ${total}`;
+            this.elements.frameInfo.textContent = `Frame: ${frameNumber} / ${this.state.totalFrames}`;
         }
     }
     
@@ -542,20 +586,16 @@ class ThermalIr {
             this.convertToVideoCoords(this.state.line2)
         ];
         
-        const success = this.sendWebSocketMessage('analyzeLines', {
+        this.sendWebSocketMessage('analyzeLines', {
             experimentId: this.state.experimentId,
             frameNum: this.state.currentFrame,
             lines: lines
         });
-        
-        if (success) {
-            this.updateAnalysisInfo('Analyzing temperature...');
-        }
     }
     
     convertToVideoCoords(line) {
-        const scaleX = 908 / this.canvas.width;
-        const scaleY = 1200 / this.canvas.height;
+        const scaleX = this.config.videoWidth / this.canvas.width;
+        const scaleY = this.config.videoHeight / this.canvas.height;
         
         return {
             x1: Math.round(line.x1 * scaleX),
@@ -572,6 +612,12 @@ class ThermalIr {
             const line1Result = data.results[0];
             const line2Result = data.results[1];
             
+            // Log resolution information for debugging
+            console.log('Line 1 temperature points:', line1Result.temperatures?.length);
+            console.log('Line 2 temperature points:', line2Result.temperatures?.length);
+            console.log('Line 1 sample temperatures (first 10):', line1Result.temperatures?.slice(0, 10));
+            console.log('Line 2 sample temperatures (first 10):', line2Result.temperatures?.slice(0, 10));
+            
             if (line1Result.success && line1Result.temperatures) {
                 this.updateHorizontalChart(line1Result.temperatures);
             }
@@ -579,8 +625,6 @@ class ThermalIr {
             if (line2Result.success && line2Result.temperatures) {
                 this.updateVerticalChart(line2Result.temperatures);
             }
-            
-            this.updateAnalysisInfo(`Analysis complete - ${data.lineCount} lines processed`);
         }
     }
     
@@ -595,9 +639,8 @@ class ThermalIr {
     createHorizontalChart() {
         const traces = [{
             x: [], y: [],
-            type: 'scatter', mode: 'lines+markers',
+            type: 'scatter', mode: 'lines', // Changed from 'lines+markers' for high-resolution data
             line: { color: this.config.colors.line1, width: 2 },
-            marker: { color: this.config.colors.line1, size: 4 },
             name: 'Temperature'
         }];
         
@@ -619,9 +662,8 @@ class ThermalIr {
     createVerticalChart() {
         const traces = [{
             x: [], y: [],
-            type: 'scatter', mode: 'lines+markers',
+            type: 'scatter', mode: 'lines', // Changed from 'lines+markers' for high-resolution data
             line: { color: this.config.colors.line2, width: 2 },
-            marker: { color: this.config.colors.line2, size: 4 },
             name: 'Temperature'
         }];
         
@@ -629,8 +671,8 @@ class ThermalIr {
             title: '',
             xaxis: { title: 'Temperature (°C)', showgrid: true, gridcolor: this.config.colors.grid },
             yaxis: { title: 'Position (% from top)', range: [0, 100], autorange: 'reversed', showgrid: true, gridcolor: this.config.colors.grid },
-            height: 300,
-            margin: { l: 60, r: 40, t: 30, b: 50 },
+            height: 420, // Match CSS height exactly for better space utilization
+            margin: { l: 60, r: 40, t: 15, b: 25 }, // Reduced top/bottom margins for more plot area
             plot_bgcolor: '#ffffff', paper_bgcolor: '#ffffff'
         };
         
@@ -663,55 +705,6 @@ class ThermalIr {
         Plotly.restyle(this.elements.verticalTemperaturePlot, {
             x: [reversedTemps], y: [positions]
         }, [0]);
-    }
-    
-    /**
-     * Status and UI updates
-     */
-    updateConnectionStatus() {
-        // WebSocket status
-        if (this.elements.webSocketStatus) {
-            const status = this.state.wsConnected ? 'connected' : 'disconnected';
-            const text = this.state.wsConnected ? 'Connected' : 'Disconnected';
-            
-            this.elements.webSocketStatus.dataset.status = status;
-            const statusText = this.elements.webSocketStatus.querySelector('.status-text');
-            if (statusText) statusText.textContent = text;
-        }
-        
-        // Engine status
-        if (this.elements.engineStatus) {
-            const status = this.state.engineReady ? 'ready' : 'not-ready';
-            const text = this.state.engineReady ? 'Ready' : 'Not Ready';
-            
-            this.elements.engineStatus.dataset.status = status;
-            const statusText = this.elements.engineStatus.querySelector('.status-text');
-            if (statusText) statusText.textContent = text;
-        }
-    }
-    
-    updateVideoStatus(status) {
-        if (this.elements.videoStatus) {
-            const statusTexts = {
-                'loading': 'Loading',
-                'loaded': 'Loaded', 
-                'error': 'Error'
-            };
-            
-            this.elements.videoStatus.dataset.status = status;
-            const statusText = this.elements.videoStatus.querySelector('.status-text');
-            if (statusText) statusText.textContent = statusTexts[status] || status;
-        }
-    }
-    
-    updateAnalysisInfo(message) {
-        if (this.elements.analysisInfo) {
-            this.elements.analysisInfo.textContent = message;
-        }
-        
-        if (this.elements.lastAnalysis) {
-            this.elements.lastAnalysis.textContent = new Date().toLocaleTimeString();
-        }
     }
     
     showError(message) {

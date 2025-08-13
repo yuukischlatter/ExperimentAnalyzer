@@ -57,12 +57,12 @@
                         </button>
                         
                         <input data-bind="frameSlider" id="frame-slider" type="range" 
-                               min="0" max="100" value="0" class="frame-slider">
+                               min="0" max="3674" value="0" class="frame-slider">
                         
                         <div class="frame-info">
-                            <span data-bind="frameInfo" id="frame-info">Frame: 0 / 0</span>
+                            <span data-bind="frameInfo" id="frame-info">Frame: 0 / 3674</span>
                             <span data-bind="videoInfo" class="video-metadata text-xs text-muted">
-                                Loading video info...
+                                3674 frames, 14.108 FPS, 908x1200
                             </span>
                         </div>
                     </div>
@@ -84,40 +84,6 @@
                 </div>
                 <div class="chart-info">
                     <p class="text-xs text-muted">Temperature vs. Position (%)</p>
-                </div>
-            </div>
-            
-            <!-- Connection Status Section (Middle) -->
-            <div class="connection-status-section">
-                <div class="status-indicators">
-                    <div class="status-group">
-                        <div class="status-indicator" data-bind="webSocketStatus" data-status="disconnected">
-                            <span class="status-dot"></span>
-                            <span class="status-label">WebSocket</span>
-                            <span class="status-text">Disconnected</span>
-                        </div>
-                        
-                        <div class="status-indicator" data-bind="engineStatus" data-status="not-ready">
-                            <span class="status-dot"></span>
-                            <span class="status-label">Thermal Engine</span>
-                            <span class="status-text">Not Ready</span>
-                        </div>
-                        
-                        <div class="status-indicator" data-bind="videoStatus" data-status="loading">
-                            <span class="status-dot"></span>
-                            <span class="status-label">Video</span>
-                            <span class="status-text">Loading</span>
-                        </div>
-                    </div>
-                    
-                    <div class="analysis-info">
-                        <span data-bind="analysisInfo" class="text-xs text-muted">
-                            Draw lines on video to analyze temperature
-                        </span>
-                        <span data-bind="lastAnalysis" class="text-xs text-secondary">
-                            <!-- Last analysis time info -->
-                        </span>
-                    </div>
                 </div>
             </div>
             
