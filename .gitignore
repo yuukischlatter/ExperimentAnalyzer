@@ -88,3 +88,4 @@ packages/
 experiment_data/
 schweissungen/
 test_data/
+backend/cache/
