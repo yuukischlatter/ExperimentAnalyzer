@@ -1,0 +1,141 @@
+{
+  "name": "experiment-analyzer",
+  "version": "1.0.0",
+  "description": "Schlatter Experiment Analyzer - Welding Data Analysis Desktop Application",
+  "main": "electron-main.js",
+  "homepage": "./",
+  "author": "Schlatter Industries",
+  "license": "ISC",
+  "scripts": {
+    "start": "electron .",
+    "dev": "concurrently \"npm run backend-dev\" \"wait-on http://localhost:5001 && npm run electron-dev\"",
+    "electron": "electron .",
+    "electron-dev": "NODE_ENV=development electron .",
+    "backend-dev": "cd backend && npm run dev",
+    "prepare-deps": "node prepare-deps.js",
+    "build-win": "npm run prepare-deps && electron-builder --win --x64",
+    "build-portable": "npm run prepare-deps && electron-builder --win portable --x64",
+    "dist": "npm run build-win",
+    "clean": "rimraf dist runtime-deps",
+    "setup": "npm install && cd backend && npm install",
+    "postinstall": "cd backend && npm install"
+  },
+  "build": {
+    "appId": "com.schlatter.experiment-analyzer",
+    "productName": "ExperimentAnalyzer",
+    "artifactName": "ExperimentAnalyzer-${version}-${arch}.${ext}",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron-main.js",
+      "electron-preload.js",
+      "backend/**/*",
+      "frontend/**/*",
+      "runtime-deps/**/*",
+      "!backend/node_modules/.cache/**/*",
+      "!backend/cache/**/*",
+      "!backend/experiments.db*",
+      "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}",
+      "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}",
+      "!**/node_modules/*.d.ts",
+      "!**/node_modules/.bin",
+      "!**/*.{iml,o,hprof,orig,pyc,pyo,rbc,swp,csproj,sln,xproj}",
+      "!.editorconfig",
+      "!**/._*",
+      "!**/{.DS_Store,.git,.hg,.svn,CVS,RCS,SCCS,.gitignore,.gitattributes}",
+      "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
+      "!**/{appveyor.yml,.travis.yml,circle.yml}",
+      "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
+    ],
+    "asarUnpack": [
+      "backend/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "backend/native/hdf5/build/Release/",
+        "to": "native/hdf5/",
+        "filter": ["hdf5_native.node"]
+      },
+      {
+        "from": "backend/native/thermal/build/Release/",
+        "to": "native/thermal/",
+        "filter": ["thermal_engine.node", "opencv_world4100.dll", "opencv_world4100d.dll"]
+      },
+      {
+        "from": "runtime-deps/",
+        "to": "runtime-deps/",
+        "filter": ["*.dll"]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "requestedExecutionLevel": "asInvoker",
+      "publisherName": "Schlatter Industries",
+      "verifyUpdateCodeSignature": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Experiment Analyzer",
+      "displayLanguageSelector": false,
+      "installerLanguages": ["en_US"],
+      "menuCategory": "Schlatter Industries",
+      "allowElevation": false
+    },
+    "portable": {
+      "artifactName": "ExperimentAnalyzer-${version}-portable.${ext}"
+    }
+  },
+  "devDependencies": {
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.1",
+    "concurrently": "^8.2.2",
+    "wait-on": "^7.2.0",
+    "rimraf": "^5.0.5"
+  },
+  "dependencies": {
+    "electron-is-dev": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "keywords": [
+    "welding",
+    "data-analysis",
+    "experiments",
+    "schlatter",
+    "industrial",
+    "hdf5",
+    "thermal",
+    "oscilloscope",
+    "desktop",
+    "electron"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "local"
+  }
+}

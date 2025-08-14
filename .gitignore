@@ -89,3 +89,190 @@ experiment_data/
 schweissungen/
 test_data/
 backend/cache/
+
+# =============================================================================
+# ELECTRON BUILD ARTIFACTS (ADDED)
+# =============================================================================
+
+# Electron build output
+dist/
+dist-windows/
+out/
+
+# Electron runtime dependencies
+runtime-deps/
+
+# Electron executables (in case built in source directory)
+*.exe
+*.deb
+*.dmg
+*.AppImage
+*.snap
+
+# Electron package files
+package-lock.json
+/package-lock.json
+
+# Root node_modules (Electron dependencies)
+/node_modules/
+
+# Electron builder cache
+.electron-builder/
+.electron-cache/
+
+# Electron temporary files
+.electron/
+electron-temp/
+
+# Auto-generated files during build
+electron-builder.env
+electron-builder-effective-config.yaml
+
+# Native module rebuilds
+backend/native/*/build/
+backend/native/*/node_modules/
+
+# Compiled native modules (will be copied to runtime-deps)
+*.node
+*.dll
+*.dylib
+*.so
+
+# EXCEPTION: Keep the actual built native modules for packaging
+!backend/native/hdf5/build/Release/hdf5_native.node
+!backend/native/thermal/build/Release/thermal_engine.node
+!backend/native/thermal/build/Release/opencv_world4100.dll
+!backend/native/thermal/build/Release/opencv_world4100d.dll
+
+# Thermal cache (local development)
+cache/thermal/
+
+# Electron development temporary files
+.tmp/
+temp/
+
+# Code signing certificates (if used)
+*.p12
+*.pfx
+*.pem
+*.crt
+*.key
+
+# =============================================================================
+# DEVELOPMENT SPECIFIC (ADDED)
+# =============================================================================
+
+# Local development database (in case someone uses local DB for testing)
+local_experiments.db*
+
+# Development configuration overrides
+config.local.js
+appsettings.local.json
+
+# IDE specific folders
+.vscode/settings.json
+.vscode/launch.json
+
+# Testing artifacts
+coverage/
+.nyc_output/
+test-results/
+
+# Benchmark results
+benchmark-results/
+
+# Local scripts
+local-scripts/
+deploy-local.bat
+deploy-local.sh
+
+# =============================================================================
+# BUILD SYSTEM SPECIFIC (ADDED)
+# =============================================================================
+
+# npm/yarn lock files (keep package-lock.json in backend/, exclude in root)
+yarn.lock
+
+# Build logs
+build.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+
+# Dependency vulnerability reports
+audit-results.json
+security-report.html
+
+# Performance profiling
+*.cpuprofile
+*.heapprofile
+*.heapsnapshot
+
+# =============================================================================
+# WINDOWS SPECIFIC (ADDED)
+# =============================================================================
+
+# Windows build tools
+.msbuild/
+.nuget/
+
+# Windows shortcuts
+*.lnk
+
+# Windows image file caches
+Thumbs.db
+Thumbs.db:encryptable
+
+# Windows Installer files
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+
+# Windows shortcuts
+*.url
+
+# =============================================================================
+# PRODUCTION DEPLOYMENT (ADDED)
+# =============================================================================
+
+# Production builds (in case accidentally generated in source)
+production-build/
+release-artifacts/
+
+# Deployment configurations
+deploy.config
+*.production.json
+
+# Backup files
+*.backup
+*.bak
+
+# Archive files
+*.zip
+*.rar
+*.7z
+*.tar.gz
+
+# =============================================================================
+# SECURITY (ADDED)
+# =============================================================================
+
+# Secrets and sensitive data
+secrets/
+.secrets/
+*.secret
+*.credentials
+
+# API keys and tokens
+.env.production
+.env.staging
+api-keys.json
+
+# SSL certificates
+ssl/
+certificates/
+*.csr
+*.der
