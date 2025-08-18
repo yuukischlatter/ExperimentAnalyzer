@@ -2,7 +2,7 @@
  * Experiment Analyzer - Node.js Backend Server
  * Main entry point (equivalent to C# Program.cs)
  * Enhanced with WebSocket support for thermal analysis
- * MODIFIED: Added Electron integration and R: drive database handling
+ * MODIFIED: Fixed thermal cache path to use absolute paths
  */
 
 const express = require('express');
@@ -82,13 +82,15 @@ async function createApp() {
         });
     }
 
-    // ===== THERMAL VIDEO STATIC SERVING =====
+    // ===== THERMAL VIDEO STATIC SERVING - FIXED =====
+    // FIXED: Ensure absolute path for thermal cache directory
+    const thermalCacheDir = path.join(__dirname, 'cache', 'thermal');
+
     // Create thermal cache directory if it doesn't exist
-    const thermalCacheDir = config.thermal.cacheDir;
     if (!fs.existsSync(thermalCacheDir)) {
         fs.mkdirSync(thermalCacheDir, { recursive: true });
         console.log(`✓ Created thermal cache directory: ${thermalCacheDir}`);
-    }
+    }   
 
     // Serve thermal videos statically (Express handles all file access properly)
     app.use('/cache/thermal', express.static(thermalCacheDir, {
@@ -97,7 +99,16 @@ async function createApp() {
         lastModified: true,     // Enable Last-Modified headers
         acceptRanges: true,     // Enable range requests for video seeking
         cacheControl: true,     // Enable Cache-Control headers
-        immutable: false        // Files can be updated
+        immutable: false,       // Files can be updated
+        setHeaders: (res, path, stat) => {
+            // Add CORS headers for Electron
+            res.set('Access-Control-Allow-Origin', '*');
+            res.set('Access-Control-Allow-Methods', 'GET');
+            // Set content type explicitly for MP4
+            if (path.endsWith('.mp4')) {
+                res.set('Content-Type', 'video/mp4');
+            }
+        }
     }));
 
     console.log(`✓ Thermal video static serving enabled: /cache/thermal -> ${thermalCacheDir}`);
@@ -116,12 +127,12 @@ async function createApp() {
                 version: require('./package.json').version,
                 environment: config.server.nodeEnv,
                 electron: config.isElectron,
-                database: config.isElectron ? 'R:\\Schweissungen\\experiments.db' : config.database.fullPath,
+                database: config.isElectron ? config.database.fullPath : config.database.fullPath,
                 experimentsRoot: config.experiments.rootPath,
                 thermalCacheEnabled: true,
                 thermalCacheDir: thermalCacheDir,
                 port: config.server.port,
-                rDriveAccessible: config.isElectron ? true : 'N/A' // If we get here, R: drive is accessible
+                networkAccessible: config.isElectron ? true : 'N/A'
             }
         });
     });
@@ -138,9 +149,6 @@ async function createApp() {
                 if (config.isElectron) {
                     // Add Electron identification header
                     res.set('X-Powered-By', 'Electron-ExperimentAnalyzer');
-                    
-                    // Disable some security headers that aren't needed in Electron
-                    res.removeHeader('X-Powered-By');
                 }
             }
         }));
@@ -189,12 +197,12 @@ async function createApp() {
             errorResponse.details = error;
         }
         
-        // R: drive specific errors
-        if (error.message.includes('R:') || error.message.includes('ENOENT')) {
+        // Network drive specific errors
+        if (error.message.includes('\\\\NAS') || error.message.includes('ENOENT')) {
             errorResponse.troubleshooting = [
-                'Check if R: drive is mapped and accessible',
-                'Verify network connection to R: drive',
-                'Ensure read/write permissions to R:\\Schweissungen',
+                'Check if network drive is mapped and accessible',
+                'Verify network connection',
+                'Ensure read/write permissions',
                 'Try restarting the application'
             ];
         }
@@ -261,7 +269,12 @@ async function startServer() {
             const baseUrl = `http://${config.server.host}:${config.server.port}`;
             console.log(`🚀 ${logPrefix} Server running on ${baseUrl}`);
             console.log(`🔌 WebSocket endpoint: ws://${config.server.host}:${config.server.port}/thermal-ws`);
-            console.log(`📹 Thermal video cache: ${baseUrl}/cache/thermal/`);
+            
+            // FIXED: Log absolute thermal cache path
+            const thermalCacheDir = path.isAbsolute(config.thermal.cacheDir) 
+                ? config.thermal.cacheDir 
+                : path.join(__dirname, 'cache', 'thermal');
+            console.log(`📹 Thermal video cache: ${baseUrl}/cache/thermal/ (${thermalCacheDir})`);
             console.log(`📊 Health check: ${baseUrl}/api/health`);
             
             if (config.isElectron) {
@@ -312,11 +325,15 @@ async function startServer() {
         process.on('SIGTERM', () => shutdown('SIGTERM'));
         process.on('SIGINT', () => shutdown('SIGINT'));
 
-        // Log server status
+        // Log server status with absolute paths
+        const absoluteThermalCache = path.isAbsolute(config.thermal.cacheDir) 
+            ? config.thermal.cacheDir 
+            : path.join(__dirname, 'cache', 'thermal');
+            
         console.log(`📊 ${logPrefix} Server Status:`);
         console.log(`   HTTP: http://${config.server.host}:${config.server.port}`);
         console.log(`   WebSocket: ws://${config.server.host}:${config.server.port}/thermal-ws`);
-        console.log(`   Thermal Cache: /cache/thermal/`);
+        console.log(`   Thermal Cache: /cache/thermal/ -> ${absoluteThermalCache}`);
         console.log(`   Frontend: ${config.frontend.path}`);
         console.log(`   Database: ${config.database.fullPath}`);
         console.log(`   Mode: ${config.isElectron ? 'Electron Desktop App' : 'Web Application'}`);

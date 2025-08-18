@@ -1,7 +1,7 @@
 /**
  * Application Configuration
  * Converts C# appsettings.json to Node.js environment-based config
- * MODIFIED: Added Electron detection and UNC path support for portable exe
+ * MODIFIED: Fixed thermal cache to use same path for both dev and Electron
  */
 
 require('dotenv').config();
@@ -64,11 +64,8 @@ const config = {
 
     // Thermal Analysis Configuration
     thermal: {
-        // Cache directory for converted thermal videos
-        // MODIFIED: Keep thermal cache local even in Electron for performance
-        cacheDir: isElectron 
-            ? path.join(require('os').tmpdir(), 'experiment-analyzer-thermal')
-            : (process.env.THERMAL_CACHE_DIR || path.join(process.cwd(), 'cache', 'thermal')),
+        // FIXED: Always use backend cache directory for both dev and Electron
+        cacheDir: path.join(__dirname, '..', 'cache', 'thermal'),
         // Maximum concurrent video conversions
         maxConcurrentConversions: parseInt(process.env.THERMAL_MAX_CONVERSIONS || '2'),
         // Cache timeout (24 hours by default)

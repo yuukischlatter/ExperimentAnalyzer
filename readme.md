@@ -9,9 +9,19 @@ service.initializeAllData(true).then(success => {
 });
 "
 
+Rebuild Nativs:
+
+npm run rebuild
+
+
+
 
 Build it
 
+cd C:\Users\scy\Documents\ExperimentAnalyzer
+Remove-Item -Recurse -Force dist
+
+npm run build-portable
 
 # Fix the unpacked folder
 xcopy /E /I dist\win-unpacked\backend\node_modules dist\win-unpacked\resources\app\backend\node_modules

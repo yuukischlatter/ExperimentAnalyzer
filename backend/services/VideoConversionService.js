@@ -361,38 +361,39 @@ class VideoConversionService {
      * Execute FFmpeg conversion
      * @private
      */
-    _ffmpegConvert(inputPath, outputPath) {
-        return new Promise((resolve, reject) => {
-            ffmpeg(inputPath)
-                .outputOptions([
-                    '-c:v libx264',        // H.264 video codec
-                    '-crf 23',             // Good quality/size balance
-                    '-preset fast',        // Fast encoding
-                    '-c:a aac',            // AAC audio codec
-                    '-b:a 128k',           // Audio bitrate
-                    '-movflags +faststart', // Enable progressive download
-                    '-pix_fmt yuv420p'     // Ensure browser compatibility
-                ])
-                .output(outputPath)
-                .on('start', (commandLine) => {
-                    console.log('FFmpeg command:', commandLine);
-                })
-                .on('progress', (progress) => {
-                    if (progress.percent) {
-                        console.log(`Conversion progress: ${Math.round(progress.percent)}%`);
-                    }
-                })
-                .on('end', () => {
-                    console.log('FFmpeg conversion completed');
-                    resolve();
-                })
-                .on('error', (error) => {
-                    console.error('FFmpeg error:', error);
-                    reject(new Error(`FFmpeg conversion failed: ${error.message}`));
-                })
-                .run();
-        });
-    }
+_ffmpegConvert(inputPath, outputPath) {
+    return new Promise((resolve, reject) => {
+        ffmpeg(inputPath)
+            .outputOptions([
+                '-c:v libx264',        // H.264 video codec
+                '-crf 28',             // Higher compression (was 23)
+                '-preset veryfast',    // Faster encoding
+                '-maxrate 2M',         // Max 2 Mbps bitrate
+                '-bufsize 2M',         // Buffer size
+                '-an',                 // REMOVE AUDIO completely
+                '-movflags +faststart', // Enable progressive download
+                '-pix_fmt yuv420p'     // Browser compatibility
+            ])
+            .output(outputPath)
+            .on('start', (commandLine) => {
+                console.log('FFmpeg command:', commandLine);
+            })
+            .on('progress', (progress) => {
+                if (progress.percent) {
+                    console.log(`Conversion progress: ${Math.round(progress.percent)}%`);
+                }
+            })
+            .on('end', () => {
+                console.log('FFmpeg conversion completed');
+                resolve();
+            })
+            .on('error', (error) => {
+                console.error('FFmpeg error:', error);
+                reject(new Error(`FFmpeg conversion failed: ${error.message}`));
+            })
+            .run();
+    });
+}
 
     /**
      * Get cached conversion info

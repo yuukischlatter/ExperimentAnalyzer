@@ -159,7 +159,7 @@ function createWindow() {
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            webSecurity: !isDev
+            webSecurity: false
         },
         icon: path.join(__dirname, 'build', 'icon.ico'),
         title: 'Experiment Analyzer - Schlatter',
