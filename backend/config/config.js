@@ -1,7 +1,7 @@
 /**
  * Application Configuration
  * Converts C# appsettings.json to Node.js environment-based config
- * MODIFIED: Added Electron detection and R: drive database path
+ * MODIFIED: Added Electron detection and UNC path support for portable exe
  */
 
 require('dotenv').config();
@@ -9,6 +9,10 @@ const path = require('path');
 
 // Detect if running in Electron environment
 const isElectron = process.env.ELECTRON === 'true' || process.versions.electron;
+
+// UNC path configuration for network drive
+const UNC_BASE = '\\\\NAS\\projekt_1405';
+const UNC_SCHWEISSUNGEN = `${UNC_BASE}\\Schweissungen`;
 
 const config = {
     // Server Configuration
@@ -20,22 +24,22 @@ const config = {
 
     // Database Configuration (equivalent to ConnectionStrings in C#)
     database: {
-        // MODIFIED: R: drive path for Electron, local path for development
+        // MODIFIED: UNC path for Electron portable, R: drive for development
         path: isElectron 
-            ? 'R:\\Schweissungen\\experiments.db'
+            ? `${UNC_SCHWEISSUNGEN}\\experiments.db`
             : (process.env.DB_PATH || 'experiments.db'),
         timeout: parseInt(process.env.DB_TIMEOUT || '5000'),
         // Full path to database file
         fullPath: isElectron 
-            ? 'R:\\Schweissungen\\experiments.db'
+            ? `${UNC_SCHWEISSUNGEN}\\experiments.db`
             : path.join(process.cwd(), process.env.DB_PATH || 'experiments.db')
     },
 
     // Experiment Settings (from C# ExperimentSettings)
     experiments: {
-        // MODIFIED: R: drive root for Electron, configurable for development
+        // MODIFIED: UNC path for Electron portable, R: drive for development
         rootPath: isElectron 
-            ? 'R:\\Schweissungen'
+            ? UNC_SCHWEISSUNGEN
             : (process.env.EXPERIMENT_ROOT_PATH || 'R:/Schweissungen'),
         validDateFrom: process.env.EXPERIMENT_VALID_DATE_FROM || '2025-07-01'
     },
@@ -71,14 +75,19 @@ const config = {
         cacheTimeoutHours: parseInt(process.env.THERMAL_CACHE_TIMEOUT_HOURS || '24')
     },
 
-    // NEW: Electron-specific configuration
+    // NEW: Electron-specific configuration with UNC support
     electron: {
         enabled: isElectron,
-        // R: drive configuration
-        rDrive: {
-            databasePath: 'R:\\Schweissungen\\experiments.db',
-            experimentsRoot: 'R:\\Schweissungen',
-            required: true, // No fallback - R: drive must be accessible
+        // Network paths configuration
+        network: {
+            uncBase: UNC_BASE,
+            uncSchweissungen: UNC_SCHWEISSUNGEN,
+            databasePath: `${UNC_SCHWEISSUNGEN}\\experiments.db`,
+            experimentsRoot: UNC_SCHWEISSUNGEN,
+            // Fallback to R: drive if available
+            tryDriveLetter: true,
+            driveLetter: 'R:',
+            driveRoot: 'R:\\Schweissungen'
         },
         // Development vs production behavior
         development: {
@@ -115,15 +124,11 @@ function validateConfig() {
 
     // NEW: Electron-specific validation
     if (isElectron) {
-        // In Electron, R: drive paths are mandatory
-        if (!config.electron.rDrive.databasePath.startsWith('R:\\')) {
-            errors.push('Electron database path must be on R: drive');
+        // In Electron, network paths are mandatory
+        if (!config.electron.network.uncSchweissungen.startsWith('\\\\')) {
+            errors.push('Electron UNC path must be a valid network path');
         }
         
-        if (!config.electron.rDrive.experimentsRoot.startsWith('R:\\')) {
-            errors.push('Electron experiments root must be on R: drive');
-        }
-
         // Validate port is different from default to avoid conflicts
         if (config.server.port === 5000) {
             errors.push('Electron should use port 5001 to avoid conflicts with development server');
@@ -135,8 +140,8 @@ function validateConfig() {
     }
 }
 
-// NEW: R: drive accessibility check (Electron only)
-function checkRDriveAccess() {
+// NEW: Network path accessibility check (Electron only)
+function checkNetworkAccess() {
     if (!isElectron) {
         return true; // Skip check for non-Electron environments
     }
@@ -144,43 +149,70 @@ function checkRDriveAccess() {
     const fs = require('fs');
     
     try {
-        // Check if R: drive exists
-        const rDriveRoot = 'R:\\';
-        if (!fs.existsSync(rDriveRoot)) {
-            throw new Error('R: drive not found');
+        // First try UNC path
+        const uncPath = config.experiments.rootPath;
+        console.log(`📁 Checking UNC path: ${uncPath}`);
+        
+        if (fs.existsSync(uncPath)) {
+            console.log(`✅ UNC path accessible: ${uncPath}`);
+            
+            // Test write access
+            const testFile = path.join(uncPath, '.write_test_' + Date.now());
+            try {
+                fs.writeFileSync(testFile, 'test');
+                fs.unlinkSync(testFile);
+                console.log(`✅ Write access confirmed for UNC path`);
+            } catch (writeError) {
+                console.warn(`⚠️ Read-only access to UNC path: ${writeError.message}`);
+            }
+            
+            return true;
         }
-
-        // Check if Schweissungen directory exists
-        const schweissungenPath = config.experiments.rootPath;
-        if (!fs.existsSync(schweissungenPath)) {
-            console.log(`📁 Creating directory: ${schweissungenPath}`);
-            fs.mkdirSync(schweissungenPath, { recursive: true });
+        
+        // If UNC fails and tryDriveLetter is true, try R: drive
+        if (config.electron.network.tryDriveLetter) {
+            const drivePath = config.electron.network.driveRoot;
+            console.log(`📁 UNC not accessible, trying drive letter: ${drivePath}`);
+            
+            if (fs.existsSync(drivePath)) {
+                console.log(`✅ Drive letter accessible: ${drivePath}`);
+                
+                // Update config to use drive letter instead
+                config.experiments.rootPath = drivePath;
+                config.database.path = `${drivePath}\\experiments.db`;
+                config.database.fullPath = `${drivePath}\\experiments.db`;
+                
+                console.log(`📝 Switched to drive letter paths`);
+                return true;
+            }
         }
-
-        // Test write access
-        const testFile = path.join(schweissungenPath, '.write_test_' + Date.now());
-        fs.writeFileSync(testFile, 'test');
-        fs.unlinkSync(testFile);
-
-        console.log(`✅ R: drive accessible: ${schweissungenPath}`);
-        return true;
-
+        
+        throw new Error(`Network path not accessible: ${uncPath}`);
+        
     } catch (error) {
-        console.error(`❌ R: drive access failed: ${error.message}`);
+        console.error(`❌ Network access failed: ${error.message}`);
         
         if (isElectron) {
-            // In Electron, R: drive access is critical
+            // In Electron, network access is critical
             throw new Error(
-                `R: drive not accessible: ${error.message}\n\n` +
+                `Network path not accessible: ${error.message}\n\n` +
                 'Please ensure:\n' +
-                '• R: drive is mapped and available\n' +
-                '• You have read/write permissions to R:\\Schweissungen\n' +
-                '• Network connection is stable'
+                `• Network path ${config.electron.network.uncBase} is accessible\n` +
+                '• You have read/write permissions\n' +
+                '• VPN is connected (if required)\n' +
+                '• Or map the network drive to R:\\'
             );
         }
         
         return false;
     }
+}
+
+// Legacy R: drive check for backward compatibility
+function checkRDriveAccess() {
+    // This function is now replaced by checkNetworkAccess
+    // Keeping it for backward compatibility
+    return checkNetworkAccess();
 }
 
 // NEW: Environment info logging
@@ -195,8 +227,10 @@ function logEnvironmentInfo() {
     
     if (isElectron) {
         console.log('📱 Electron Configuration:');
-        console.log(`   R: Database: ${config.electron.rDrive.databasePath}`);
-        console.log(`   R: Experiments: ${config.electron.rDrive.experimentsRoot}`);
+        console.log(`   UNC Base: ${config.electron.network.uncBase}`);
+        console.log(`   UNC Experiments: ${config.electron.network.uncSchweissungen}`);
+        console.log(`   Database: ${config.electron.network.databasePath}`);
+        console.log(`   Try Drive Letter: ${config.electron.network.tryDriveLetter}`);
         console.log(`   Dev tools: ${config.electron.development.openDevTools}`);
     }
 }
@@ -205,7 +239,8 @@ function logEnvironmentInfo() {
 module.exports = {
     ...config,
     validate: validateConfig,
-    checkRDriveAccess: checkRDriveAccess,
+    checkRDriveAccess: checkRDriveAccess, // Legacy compatibility
+    checkNetworkAccess: checkNetworkAccess,
     logEnvironmentInfo: logEnvironmentInfo,
     isElectron: isElectron
 };

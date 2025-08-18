@@ -1,6 +1,7 @@
 /**
  * Electron Main Process
  * Entry point for the Electron application
+ * UPDATED: Support for UNC paths for portable exe
  */
 
 const { app, BrowserWindow, dialog, shell } = require('electron');
@@ -15,40 +16,76 @@ let mainWindow = null;
 let backendServer = null;
 let serverPort = 5001; // Different from default backend port
 
+// UNC path configuration (matches backend config)
+const UNC_BASE = '\\\\NAS\\projekt_1405';
+const UNC_SCHWEISSUNGEN = `${UNC_BASE}\\Schweissungen`;
+
 /**
- * Check if R: drive is accessible
+ * Check if network path is accessible (UNC or drive letter)
  */
-function checkRDriveAccess() {
-    const rDrivePath = 'R:\\Schweissungen';
+function checkNetworkAccess() {
+    // Try UNC path first
+    const uncPath = UNC_SCHWEISSUNGEN;
     
     try {
-        // Check if R: drive exists
-        if (!fs.existsSync('R:\\')) {
-            return {
-                success: false,
-                error: 'R: drive not found',
-                details: 'The R: drive is not mapped on this system.'
-            };
+        console.log(`Checking UNC path: ${uncPath}`);
+        
+        // Check if UNC path exists
+        if (fs.existsSync(uncPath)) {
+            console.log(`✅ UNC path accessible: ${uncPath}`);
+            
+            // Test read access
+            try {
+                fs.readdirSync(uncPath);
+                return {
+                    success: true,
+                    path: uncPath,
+                    type: 'UNC'
+                };
+            } catch (readError) {
+                return {
+                    success: false,
+                    error: 'UNC path exists but cannot read',
+                    details: readError.message
+                };
+            }
         }
         
-        // Check if Schweissungen folder exists
-        if (!fs.existsSync(rDrivePath)) {
-            return {
-                success: false,
-                error: 'Schweissungen folder not found',
-                details: `Cannot find folder: ${rDrivePath}`
-            };
+        // If UNC fails, try R: drive as fallback
+        const rDrivePath = 'R:\\Schweissungen';
+        console.log(`UNC not accessible, trying R: drive: ${rDrivePath}`);
+        
+        if (fs.existsSync(rDrivePath)) {
+            console.log(`✅ R: drive accessible: ${rDrivePath}`);
+            
+            // Test read access
+            try {
+                fs.readdirSync(rDrivePath);
+                return {
+                    success: true,
+                    path: rDrivePath,
+                    type: 'Drive Letter'
+                };
+            } catch (readError) {
+                return {
+                    success: false,
+                    error: 'R: drive exists but cannot read',
+                    details: readError.message
+                };
+            }
         }
         
-        // Test read access
-        fs.readdirSync(rDrivePath);
-        
-        return { success: true };
+        // Neither path works
+        return {
+            success: false,
+            error: 'Network path not accessible',
+            details: `Cannot access either:\n- UNC: ${uncPath}\n- Drive: ${rDrivePath}`
+        };
         
     } catch (error) {
         return {
             success: false,
-            error: 'R: drive access failed',
+            error: 'Network access check failed',
             details: error.message
         };
     }
@@ -65,9 +102,30 @@ async function startBackendServer() {
         process.env.PORT = serverPort;
         process.env.HOST = 'localhost';
         
-        // IMPORTANT: Change working directory to backend so paths resolve correctly
+        // Determine the correct backend path
+        let backendPath;
+        if (isDev) {
+            // Development: backend is in project root
+            backendPath = path.join(__dirname, 'backend');
+        } else {
+            // Production: backend is relative to resources/app
+            backendPath = path.join(process.resourcesPath, 'app', 'backend');
+            
+            // If app.asar is not used, try direct path
+            if (!fs.existsSync(backendPath)) {
+                backendPath = path.join(path.dirname(app.getPath('exe')), 'backend');
+            }
+        }
+        
+        console.log(`Backend path: ${backendPath}`);
+        
+        // Verify backend exists
+        if (!fs.existsSync(backendPath)) {
+            throw new Error(`Backend not found at: ${backendPath}`);
+        }
+        
+        // Change working directory to backend
         const originalCwd = process.cwd();
-        const backendPath = path.join(__dirname, 'backend');
         process.chdir(backendPath);
         
         // Require and start the backend server
@@ -148,6 +206,23 @@ function showErrorAndQuit(title, message, details) {
 }
 
 /**
+ * Show error dialog with retry option
+ */
+async function showErrorWithRetry(title, message, details) {
+    const result = await dialog.showMessageBox(null, {
+        type: 'error',
+        title: title,
+        message: message,
+        detail: details,
+        buttons: ['Retry', 'Quit'],
+        defaultId: 0,
+        cancelId: 1
+    });
+    
+    return result.response === 0; // true if Retry was clicked
+}
+
+/**
  * Initialize the application
  */
 async function initializeApp() {
@@ -157,20 +232,58 @@ async function initializeApp() {
         console.log(`App path: ${app.getAppPath()}`);
         console.log(`Executable path: ${app.getPath('exe')}`);
         
-        // Step 1: Check R: drive access
-        console.log('Checking R: drive access...');
-        const rDriveCheck = checkRDriveAccess();
+        // Step 1: Check network access with retry capability
+        let networkCheck;
+        let retryCount = 0;
+        const maxRetries = 3;
         
-        if (!rDriveCheck.success) {
-            showErrorAndQuit(
-                'R: Drive Not Accessible',
-                rDriveCheck.error,
-                rDriveCheck.details + '\n\nPlease ensure the R: drive is mapped and accessible.'
-            );
-            return;
+        while (retryCount < maxRetries) {
+            console.log(`Checking network access (attempt ${retryCount + 1}/${maxRetries})...`);
+            networkCheck = checkNetworkAccess();
+            
+            if (networkCheck.success) {
+                break;
+            }
+            
+            if (retryCount < maxRetries - 1) {
+                // Show retry dialog
+                const shouldRetry = await showErrorWithRetry(
+                    'Network Path Not Accessible',
+                    networkCheck.error,
+                    `${networkCheck.details}\n\nAttempt ${retryCount + 1} of ${maxRetries}\n\n` +
+                    'Please ensure:\n' +
+                    '• You are connected to the network\n' +
+                    '• VPN is connected (if required)\n' +
+                    `• Network path ${UNC_BASE} is accessible\n` +
+                    '• Or R: drive is mapped'
+                );
+                
+                if (!shouldRetry) {
+                    app.quit();
+                    return;
+                }
+                
+                // Wait a bit before retrying
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                retryCount++;
+            } else {
+                // Final attempt failed
+                showErrorAndQuit(
+                    'Network Path Not Accessible',
+                    networkCheck.error,
+                    `${networkCheck.details}\n\n` +
+                    'The application requires access to the network path.\n\n' +
+                    'Please ensure:\n' +
+                    '• You are connected to the company network\n' +
+                    '• VPN is connected (if working remotely)\n' +
+                    `• You have access to ${UNC_BASE}\n` +
+                    '• Or map the network drive to R:\\'
+                );
+                return;
+            }
         }
         
-        console.log('✓ R: drive accessible');
+        console.log(`✓ Network accessible via ${networkCheck.type}: ${networkCheck.path}`);
         
         // Step 2: Copy DLLs to app directory if needed (for native modules)
         copyRequiredDLLs();
@@ -224,7 +337,9 @@ function copyRequiredDLLs() {
                 'opencv_world4100d.dll',
                 'hdf5.dll',
                 'zlib.dll',
-                'aec.dll'
+                'aec.dll',
+                'szip.dll',
+                'zlib1.dll'
             ];
             
             dllsToCopy.forEach(dll => {
