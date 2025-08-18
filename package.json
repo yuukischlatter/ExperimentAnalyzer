@@ -24,6 +24,7 @@
     "appId": "com.schlatter.experiment-analyzer",
     "productName": "ExperimentAnalyzer",
     "artifactName": "ExperimentAnalyzer-${version}-${arch}.${ext}",
+    "asar": false,
     "directories": {
       "output": "dist",
       "buildResources": "build"
@@ -48,9 +49,6 @@
       "!**/{__pycache__,thumbs.db,.flowconfig,.idea,.vs,.nyc_output}",
       "!**/{appveyor.yml,.travis.yml,circle.yml}",
       "!**/{npm-debug.log,yarn.lock,.yarn-integrity,.yarn-metadata.json}"
-    ],
-    "asarUnpack": [
-      "backend/**/*"
     ],
     "extraResources": [
       {

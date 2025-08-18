@@ -2,7 +2,7 @@
  * Experiment Analyzer - Electron Main Process
  * Manages the desktop application window and runs backend server embedded
  * Database: R:\Schweissungen\experiments.db (shared network location)
- * FINAL: Embedded backend with proper module resolution for bundled environment
+ * SIMPLIFIED: No asar - uses standard file system layout
  */
 
 const { app, BrowserWindow, Menu, dialog, shell, ipcMain } = require('electron');
@@ -23,56 +23,6 @@ const APP_CONFIG = {
     minWidth: 1200,
     minHeight: 700
 };
-
-/**
- * Setup module resolution for bundled Electron environment
- */
-function setupModuleResolution() {
-    if (!isDev) {
-        console.log('🔧 Setting up module resolution for bundled environment...');
-        
-        // Get the actual app path (handles app.asar)
-        const appPath = app.getAppPath();
-        const unpackedPath = appPath.replace('app.asar', 'app.asar.unpacked');
-        const backendNodeModules = path.join(unpackedPath, 'backend', 'node_modules');
-        
-        console.log(`📁 App path: ${appPath}`);
-        console.log(`📁 Unpacked path: ${unpackedPath}`);
-        console.log(`📁 Backend node_modules: ${backendNodeModules}`);
-        
-        // Check if backend files exist
-        if (fs.existsSync(backendNodeModules)) {
-            console.log('✅ Backend node_modules exists in unpacked location');
-            
-            // Add backend node_modules to Node.js module search paths
-            const Module = require('module');
-            const originalResolveLookupPaths = Module._resolveLookupPaths;
-            
-            Module._resolveLookupPaths = function(request, parent) {
-                const result = originalResolveLookupPaths.call(this, request, parent);
-                
-                // Check if result is valid and has the expected structure
-                if (result && Array.isArray(result) && result.length > 1 && Array.isArray(result[1])) {
-                    // Add our backend node_modules to the search paths if not already present
-                    if (!result[1].includes(backendNodeModules)) {
-                        result[1].unshift(backendNodeModules);
-                    }
-                }
-                
-                return result;
-            };
-            
-        } else {
-            console.error('❌ Backend node_modules not found in unpacked location!');
-        }
-        
-        // Also set NODE_PATH environment variable as fallback
-        process.env.NODE_PATH = backendNodeModules + (process.env.NODE_PATH ? path.delimiter + process.env.NODE_PATH : '');
-        require('module').Module._initPaths();
-        
-        console.log('✅ Module resolution configured for bundled environment');
-    }
-}
 
 /**
  * Setup R: drive database configuration
@@ -154,29 +104,13 @@ async function startBackendServer() {
             return; // Error dialog already shown, app will quit
         }
         
-        // Setup module resolution for bundled environment
-        setupModuleResolution();
-        
-        // Determine backend path (handle unpacked location)
+        // Determine backend path (simplified for no-asar)
         let backendPath;
         if (isDev) {
             backendPath = path.join(__dirname, 'backend');
         } else {
-            // In production, backend files need to be in unpacked location
-            const appPath = app.getAppPath();
-            
-            // Try unpacked location first (for node_modules)
-            const unpackedPath = appPath.replace('app.asar', 'app.asar.unpacked');
-            const unpackedBackendPath = path.join(unpackedPath, 'backend');
-            
-            if (fs.existsSync(unpackedBackendPath)) {
-                backendPath = unpackedBackendPath;
-                console.log('📁 Using unpacked backend path');
-            } else {
-                // Fallback: try compressed location (but this likely won't work for requires)
-                backendPath = path.join(appPath, 'backend');
-                console.log('📁 Using compressed backend path (fallback)');
-            }
+            // In production without asar, backend is just in the app directory
+            backendPath = path.join(__dirname, 'backend');
         }
         
         console.log(`📁 Backend path: ${backendPath}`);
@@ -186,24 +120,12 @@ async function startBackendServer() {
             throw new Error(`Backend path not found: ${backendPath}`);
         }
         
-        // Update module paths to include the unpacked node_modules
-        const backendNodeModules = path.join(backendPath, 'node_modules');
-        if (fs.existsSync(backendNodeModules)) {
-            console.log(`✅ Found backend node_modules: ${backendNodeModules}`);
-            
-            // Add to NODE_PATH for this process
-            process.env.NODE_PATH = backendNodeModules + (process.env.NODE_PATH ? path.delimiter + process.env.NODE_PATH : '');
-            require('module').Module._initPaths();
-        } else {
-            console.warn(`⚠️  Backend node_modules not found: ${backendNodeModules}`);
-        }
-        
-        // Change working directory to backend for proper relative imports
+        // EARLY: Change working directory BEFORE any requires
         const originalCwd = process.cwd();
         console.log(`📁 Changing working directory to: ${backendPath}`);
         process.chdir(backendPath);
         
-        // Import and start the backend server using absolute path
+        // Import and start the backend server (now from correct working directory)
         console.log('📦 Importing backend server...');
         const serverPath = path.join(backendPath, 'server.js');
         console.log(`📍 Server path: ${serverPath}`);
@@ -218,8 +140,8 @@ async function startBackendServer() {
         console.log('🔄 Starting backend server...');
         backendServer = await startServer();
         
-        // Restore original working directory
-        process.chdir(originalCwd);
+        // DON'T restore working directory - keep it as backend directory
+        // process.chdir(originalCwd); // Commented out to keep backend as working dir
         
         console.log(`✅ Backend server running on port ${serverPort}`);
         
