@@ -1,0 +1,113 @@
+# Electron Builder Configuration
+# For building portable Windows executable
+
+appId: com.schlatter.experimentanalyzer
+productName: Experiment Analyzer
+copyright: Copyright © 2025 Schlatter Industries AG
+
+directories:
+  output: dist
+  buildResources: build
+
+# Include these files in the build
+files:
+  - electron-main.js
+  - backend/**/*
+  - frontend/**/*
+  - "!backend/experiments.db"
+  - "!backend/cache/**/*"
+  - "!backend/temp/**/*"
+  - "!backend/.env"
+  - "!backend/node_modules/electron/**/*"
+  - "!backend/native/*/build/Debug/**/*"
+  - "!backend/native/*/build/Release/*.exp"
+  - "!backend/native/*/build/Release/*.lib"
+  - "!backend/native/*/build/Release/*.pdb"
+  - "!backend/native/*/build/Release/*.iobj"
+  - "!backend/native/*/build/Release/*.ipdb"
+  - "!backend/native/*/build/**/*.tlog"
+  - "!backend/native/*/build/**/*.log"
+  - "!backend/native/*/build/**/*.obj"
+  - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!**/node_modules/*/{test,__tests__,tests,powered-test,example,examples}"
+  - "!**/node_modules/.bin"
+  - "!**/*.map"
+  - "!**/.git"
+  - "!**/.gitignore"
+  - "!**/.vscode"
+  - "!**/nodemon.json"
+  - "!**/tsconfig.json"
+  - "!**/.eslintrc*"
+
+# Extra resources (DLLs) to include
+extraResources:
+  - from: deps
+    to: deps
+    filter:
+      - "**/*.dll"
+      - "**/*.csv"  # For temp_mapping.csv
+
+# Include native modules in app.asar.unpacked
+asarUnpack:
+  - backend/native/hdf5/build/Release/*.node
+  - backend/native/thermal/build/Release/*.node
+  - backend/native/thermal/data/*.csv
+  - backend/native/thermal/data/*.png
+  - deps/**/*.dll
+
+# Windows-specific configuration
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+  
+  # Application icon
+  icon: build/icon.ico
+  
+  # Request admin privileges (not needed for portable)
+  requestedExecutionLevel: asInvoker
+  
+  # Sign the executable (optional - for internal use can skip)
+  # certificateFile: certificate.pfx
+  # certificatePassword: password
+  
+  # File associations (optional)
+  # fileAssociations:
+  #   - ext: tpc5
+  #     name: TPC5 Data File
+  #     description: Schlatter TPC5 Experiment Data
+
+# Portable specific settings
+portable:
+  # Name of the portable executable
+  artifactName: ExperimentAnalyzer-Portable-${version}.exe
+  
+  # Request UAC elevation (set to false for portable)
+  requestExecutionLevel: user
+  
+  # Splash screen (optional)
+  # splashImage: build/splash.bmp
+
+# NSIS installer settings (not used for portable, but here for reference)
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+  artifactName: ExperimentAnalyzer-Setup-${version}.exe
+
+# Don't rebuild native modules during packaging (we do it manually)
+npmRebuild: false
+nodeGypRebuild: false
+buildDependenciesFromSource: false
+
+# Compression settings for smaller file size
+compression: maximum
+
+# Don't use app.asar for easier debugging (optional - set to true for production)
+asar: false
+
+# Publishing settings (not needed for internal use)
+# publish:
+#   - provider: generic
+#     url: https://your-server.com/releases

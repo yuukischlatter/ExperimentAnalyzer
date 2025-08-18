@@ -1,475 +1,322 @@
 /**
- * Experiment Analyzer - Electron Main Process
- * Manages the desktop application window and runs backend server embedded
- * Database: R:\Schweissungen\experiments.db (shared network location)
- * SIMPLIFIED: No asar - uses standard file system layout
+ * Electron Main Process
+ * Entry point for the Electron application
  */
 
-const { app, BrowserWindow, Menu, dialog, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const isDev = require('electron-is-dev');
 
+// Set environment variable for backend to detect Electron
+process.env.ELECTRON = 'true';
+
 let mainWindow = null;
 let backendServer = null;
-const serverPort = 5001; // Different port for Electron to avoid conflicts
-
-// Application configuration
-const APP_CONFIG = {
-    name: 'Experiment Analyzer',
-    version: require('./package.json').version,
-    width: 1400,
-    height: 900,
-    minWidth: 1200,
-    minHeight: 700
-};
+let serverPort = 5001; // Different from default backend port
 
 /**
- * Setup R: drive database configuration
+ * Check if R: drive is accessible
  */
-function setupDatabaseConfig() {
-    // Force R: drive database location for Electron
-    process.env.DB_PATH = 'R:\\Schweissungen\\experiments.db';
-    process.env.EXPERIMENT_ROOT_PATH = 'R:\\Schweissungen';
+function checkRDriveAccess() {
+    const rDrivePath = 'R:\\Schweissungen';
     
-    // Override port for Electron
-    process.env.PORT = serverPort;
-    process.env.HOST = 'localhost';
-    process.env.NODE_ENV = isDev ? 'development' : 'production';
-    process.env.ELECTRON = 'true';
-    
-    console.log(`📁 Database configured: R:\\Schweissungen\\experiments.db`);
-    console.log(`📂 Experiment root: R:\\Schweissungen`);
-}
-
-/**
- * Verify R: drive accessibility
- */
-function verifyRDrive() {
     try {
-        const rDrivePath = 'R:\\';
-        const schweissungenPath = 'R:\\Schweissungen';
-        
         // Check if R: drive exists
+        if (!fs.existsSync('R:\\')) {
+            return {
+                success: false,
+                error: 'R: drive not found',
+                details: 'The R: drive is not mapped on this system.'
+            };
+        }
+        
+        // Check if Schweissungen folder exists
         if (!fs.existsSync(rDrivePath)) {
-            throw new Error('R: drive is not accessible');
+            return {
+                success: false,
+                error: 'Schweissungen folder not found',
+                details: `Cannot find folder: ${rDrivePath}`
+            };
         }
         
-        // Check if Schweissungen directory exists, create if needed
-        if (!fs.existsSync(schweissungenPath)) {
-            console.log('📁 Creating Schweissungen directory...');
-            fs.mkdirSync(schweissungenPath, { recursive: true });
-        }
+        // Test read access
+        fs.readdirSync(rDrivePath);
         
-        // Test write access
-        const testFile = path.join(schweissungenPath, '.write_test');
-        fs.writeFileSync(testFile, 'test');
-        fs.unlinkSync(testFile);
-        
-        console.log('✅ R: drive accessible and writable');
-        return true;
+        return { success: true };
         
     } catch (error) {
-        console.error('❌ R: drive verification failed:', error.message);
-        
-        // Show error dialog and exit
-        dialog.showErrorBox(
-            'R: Drive Error',
-            `Cannot access R: drive for database storage.\n\n` +
-            `Error: ${error.message}\n\n` +
-            `Please ensure:\n` +
-            `• R: drive is mapped and accessible\n` +
-            `• You have read/write permissions\n` +
-            `• Network connection is stable\n\n` +
-            `Application will now exit.`
-        );
-        
-        app.quit();
-        return false;
+        return {
+            success: false,
+            error: 'R: drive access failed',
+            details: error.message
+        };
     }
 }
 
 /**
- * Start the backend server embedded in main process
+ * Start the backend server
  */
 async function startBackendServer() {
     try {
-        console.log('🚀 Starting embedded backend server...');
+        console.log('Starting backend server...');
         
-        // Setup database and environment configuration
-        setupDatabaseConfig();
+        // Set the server port
+        process.env.PORT = serverPort;
+        process.env.HOST = 'localhost';
         
-        // Verify R: drive before starting server
-        if (!verifyRDrive()) {
-            return; // Error dialog already shown, app will quit
-        }
-        
-        // Determine backend path (simplified for no-asar)
-        let backendPath;
-        if (isDev) {
-            backendPath = path.join(__dirname, 'backend');
-        } else {
-            // In production without asar, backend is just in the app directory
-            backendPath = path.join(__dirname, 'backend');
-        }
-        
-        console.log(`📁 Backend path: ${backendPath}`);
-        
-        // Verify backend path exists
-        if (!fs.existsSync(backendPath)) {
-            throw new Error(`Backend path not found: ${backendPath}`);
-        }
-        
-        // EARLY: Change working directory BEFORE any requires
+        // IMPORTANT: Change working directory to backend so paths resolve correctly
         const originalCwd = process.cwd();
-        console.log(`📁 Changing working directory to: ${backendPath}`);
+        const backendPath = path.join(__dirname, 'backend');
         process.chdir(backendPath);
         
-        // Import and start the backend server (now from correct working directory)
-        console.log('📦 Importing backend server...');
+        // Require and start the backend server
         const serverPath = path.join(backendPath, 'server.js');
-        console.log(`📍 Server path: ${serverPath}`);
-        
-        // Verify server file exists
-        if (!fs.existsSync(serverPath)) {
-            throw new Error(`Backend server file not found: ${serverPath}`);
-        }
-        
         const { startServer } = require(serverPath);
         
-        console.log('🔄 Starting backend server...');
         backendServer = await startServer();
+        console.log(`Backend server started on port ${serverPort}`);
         
-        // DON'T restore working directory - keep it as backend directory
-        // process.chdir(originalCwd); // Commented out to keep backend as working dir
+        // Restore original working directory
+        process.chdir(originalCwd);
         
-        console.log(`✅ Backend server running on port ${serverPort}`);
+        return true;
         
     } catch (error) {
-        console.error('❌ Failed to start backend server:', error);
-        
-        // Show error dialog
-        dialog.showErrorBox(
-            'Server Error', 
-            `Failed to start the backend server:\n\n${error.message}\n\n` +
-            `Please check:\n` +
-            `• R: drive is accessible\n` +
-            `• Port ${serverPort} is not in use\n` +
-            `• All dependencies are available\n\n` +
-            `Technical details:\n${error.stack || 'No stack trace available'}`
-        );
-        
-        app.quit();
+        console.error('Failed to start backend server:', error);
+        throw error;
     }
 }
 
 /**
  * Create the main application window
  */
-function createMainWindow() {
-    console.log('🖥️  Creating main window...');
-    
-    // Create browser window
+function createWindow() {
+    // Create the browser window
     mainWindow = new BrowserWindow({
-        width: APP_CONFIG.width,
-        height: APP_CONFIG.height,
-        minWidth: APP_CONFIG.minWidth,
-        minHeight: APP_CONFIG.minHeight,
-        
-        // Window styling
-        title: APP_CONFIG.name,
-        icon: getAppIcon(),
-        show: false, // Don't show until ready
-        
-        // Web preferences
+        width: 1600,
+        height: 900,
+        minWidth: 1200,
+        minHeight: 700,
         webPreferences: {
             nodeIntegration: false,
             contextIsolation: true,
-            enableRemoteModule: false,
-            preload: path.join(__dirname, 'electron-preload.js'),
-            webSecurity: !isDev, // Disable in dev for local file access
-            allowRunningInsecureContent: false
+            webSecurity: !isDev
         },
-        
-        // Platform specific
-        titleBarStyle: 'default',
-        frame: true,
-        backgroundColor: '#f5f5f5'
+        icon: path.join(__dirname, 'build', 'icon.ico'),
+        title: 'Experiment Analyzer - Schlatter',
+        show: false // Don't show until ready
     });
-
-    // Load the application from backend server
-    const appUrl = `http://localhost:${serverPort}`;
-    console.log(`🌐 Loading app from: ${appUrl}`);
     
-    mainWindow.loadURL(appUrl);
-
-    // Open DevTools in development
-    if (isDev) {
-        mainWindow.webContents.openDevTools();
-        console.log('🔧 Development mode - DevTools opened');
-    }
-
-    // Window event handlers
+    // Remove menu bar (optional - comment out if you want menu)
+    mainWindow.setMenuBarVisibility(false);
+    
+    // Load the frontend
+    const startUrl = `http://localhost:${serverPort}`;
+    
+    console.log(`Loading frontend from: ${startUrl}`);
+    mainWindow.loadURL(startUrl);
+    
+    // Show window when ready
     mainWindow.once('ready-to-show', () => {
         mainWindow.show();
-        console.log(`🎉 ${APP_CONFIG.name} ready!`);
+        
+        // Open DevTools in development
+        if (isDev) {
+            mainWindow.webContents.openDevTools();
+        }
     });
-
+    
+    // Handle window closed
     mainWindow.on('closed', () => {
         mainWindow = null;
-        console.log('🪟 Main window closed');
     });
-
-    // Handle external links
+    
+    // Handle navigation to external URLs
     mainWindow.webContents.setWindowOpenHandler(({ url }) => {
         shell.openExternal(url);
         return { action: 'deny' };
     });
-
-    // Prevent navigation away from the app
-    mainWindow.webContents.on('will-navigate', (event, navigationUrl) => {
-        const parsedUrl = new URL(navigationUrl);
-        
-        if (parsedUrl.origin !== `http://localhost:${serverPort}`) {
-            event.preventDefault();
-            console.log(`🚫 Blocked navigation to: ${navigationUrl}`);
-        }
-    });
-
-    return mainWindow;
 }
 
 /**
- * Get platform-specific app icon
+ * Show error dialog and quit
  */
-function getAppIcon() {
-    const iconPath = path.join(__dirname, 'build', 'icon.ico');
-    return fs.existsSync(iconPath) ? iconPath : undefined;
+function showErrorAndQuit(title, message, details) {
+    dialog.showErrorBox(title, `${message}\n\n${details}\n\nThe application will now exit.`);
+    app.quit();
 }
 
 /**
- * Create application menu
+ * Initialize the application
  */
-function createMenu() {
-    const template = [
-        {
-            label: 'File',
-            submenu: [
-                {
-                    label: 'Open Experiment Directory',
-                    accelerator: 'CmdOrCtrl+O',
-                    click: () => {
-                        dialog.showOpenDialog(mainWindow, {
-                            properties: ['openDirectory'],
-                            title: 'Select Experiment Directory',
-                            defaultPath: 'R:\\Schweissungen'
-                        }).then(result => {
-                            if (!result.canceled && result.filePaths.length > 0) {
-                                // Send to renderer process
-                                mainWindow.webContents.send('directory-selected', result.filePaths[0]);
-                            }
-                        });
-                    }
-                },
-                { type: 'separator' },
-                {
-                    label: 'Exit',
-                    accelerator: 'Alt+F4',
-                    click: () => {
-                        app.quit();
-                    }
-                }
-            ]
-        },
-        {
-            label: 'View',
-            submenu: [
-                { role: 'reload' },
-                { role: 'forceReload' },
-                { role: 'toggleDevTools' },
-                { type: 'separator' },
-                { role: 'resetZoom' },
-                { role: 'zoomIn' },
-                { role: 'zoomOut' },
-                { type: 'separator' },
-                { role: 'togglefullscreen' }
-            ]
-        },
-        {
-            label: 'Database',
-            submenu: [
-                {
-                    label: 'Check R: Drive Status',
-                    click: () => {
-                        const accessible = verifyRDrive();
-                        if (accessible) {
-                            dialog.showMessageBox(mainWindow, {
-                                type: 'info',
-                                title: 'R: Drive Status',
-                                message: 'R: Drive Accessible',
-                                detail: 'Database location: R:\\Schweissungen\\experiments.db\nStatus: Connected and writable'
-                            });
-                        }
-                    }
-                },
-                {
-                    label: 'Open Database Directory',
-                    click: () => {
-                        shell.openPath('R:\\Schweissungen');
-                    }
-                }
-            ]
-        },
-        {
-            label: 'Help',
-            submenu: [
-                {
-                    label: 'About',
-                    click: () => {
-                        dialog.showMessageBox(mainWindow, {
-                            type: 'info',
-                            title: 'About Experiment Analyzer',
-                            message: `${APP_CONFIG.name} v${APP_CONFIG.version}`,
-                            detail: `Schlatter Industries AG\nWelding Data Analysis System\n\nDatabase: R:\\Schweissungen\\experiments.db\nServer: localhost:${serverPort}\nMode: ${isDev ? 'Development' : 'Production'}`
-                        });
-                    }
-                },
-                {
-                    label: 'System Info',
-                    click: () => {
-                        dialog.showMessageBox(mainWindow, {
-                            type: 'info',
-                            title: 'System Information',
-                            message: 'System Information',
-                            detail: `Platform: ${process.platform}\nArch: ${process.arch}\nElectron: ${process.versions.electron}\nNode: ${process.versions.node}\nChrome: ${process.versions.chrome}\nApp Path: ${app.getAppPath()}`
-                        });
-                    }
-                }
-            ]
-        }
-    ];
-
-    const menu = Menu.buildFromTemplate(template);
-    Menu.setApplicationMenu(menu);
-}
-
-/**
- * Handle IPC messages from renderer process
- */
-function setupIPC() {
-    // Handle requests for app info
-    ipcMain.handle('get-app-info', () => {
-        return {
-            name: APP_CONFIG.name,
-            version: APP_CONFIG.version,
-            platform: process.platform,
-            isDev: isDev,
-            serverPort: serverPort,
-            databasePath: 'R:\\Schweissungen\\experiments.db',
-            experimentRoot: 'R:\\Schweissungen',
-            appPath: app.getAppPath()
-        };
-    });
-
-    // Handle window control requests
-    ipcMain.handle('window-minimize', () => {
-        if (mainWindow) {
-            mainWindow.minimize();
-        }
-    });
-
-    ipcMain.handle('window-maximize', () => {
-        if (mainWindow) {
-            if (mainWindow.isMaximized()) {
-                mainWindow.unmaximize();
-            } else {
-                mainWindow.maximize();
-            }
-        }
-    });
-
-    ipcMain.handle('window-close', () => {
-        if (mainWindow) {
-            mainWindow.close();
-        }
-    });
-
-    // Handle R: drive verification requests
-    ipcMain.handle('verify-r-drive', () => {
-        return verifyRDrive();
-    });
-}
-
-/**
- * App event handlers
- */
-app.whenReady().then(async () => {
-    console.log(`🖥️  Starting ${APP_CONFIG.name} v${APP_CONFIG.version}`);
-    console.log(`🔧 Mode: ${isDev ? 'Development' : 'Production'}`);
-    console.log(`📁 App path: ${app.getAppPath()}`);
-    
+async function initializeApp() {
     try {
-        // Start backend server first
+        console.log('Initializing Experiment Analyzer...');
+        console.log(`Running in ${isDev ? 'development' : 'production'} mode`);
+        console.log(`App path: ${app.getAppPath()}`);
+        console.log(`Executable path: ${app.getPath('exe')}`);
+        
+        // Step 1: Check R: drive access
+        console.log('Checking R: drive access...');
+        const rDriveCheck = checkRDriveAccess();
+        
+        if (!rDriveCheck.success) {
+            showErrorAndQuit(
+                'R: Drive Not Accessible',
+                rDriveCheck.error,
+                rDriveCheck.details + '\n\nPlease ensure the R: drive is mapped and accessible.'
+            );
+            return;
+        }
+        
+        console.log('✓ R: drive accessible');
+        
+        // Step 2: Copy DLLs to app directory if needed (for native modules)
+        copyRequiredDLLs();
+        
+        // Step 3: Start backend server
+        console.log('Starting backend server...');
         await startBackendServer();
         
-        // Create main window
-        createMainWindow();
+        // Step 4: Wait a moment for server to be fully ready
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // Create application menu
-        createMenu();
+        // Step 5: Create the main window
+        console.log('Creating main window...');
+        createWindow();
         
-        // Setup IPC handlers
-        setupIPC();
-        
-        console.log('🎉 Application initialization complete!');
+        console.log('✓ Application initialized successfully');
         
     } catch (error) {
-        console.error('💥 Application startup failed:', error);
+        console.error('Failed to initialize application:', error);
+        
+        showErrorAndQuit(
+            'Application Initialization Failed',
+            'Failed to start the Experiment Analyzer',
+            error.message
+        );
+    }
+}
+
+/**
+ * Copy required DLLs to application directory
+ */
+function copyRequiredDLLs() {
+    try {
+        const appPath = isDev ? __dirname : path.dirname(app.getPath('exe'));
+        const depsPath = isDev 
+            ? path.join(__dirname, 'deps')
+            : path.join(process.resourcesPath, 'deps');
+        
+        console.log(`App path: ${appPath}`);
+        console.log(`Deps path: ${depsPath}`);
+        
+        if (!fs.existsSync(depsPath)) {
+            console.warn('Dependencies folder not found, native modules may not work');
+            return;
+        }
+        
+        // Copy DLLs to app directory if in production
+        if (!isDev) {
+            const dllsToCopy = [
+                'opencv_world4100.dll',
+                'opencv_world4100d.dll',
+                'hdf5.dll',
+                'zlib.dll',
+                'aec.dll'
+            ];
+            
+            dllsToCopy.forEach(dll => {
+                const sourcePath = path.join(depsPath, dll);
+                const targetPath = path.join(appPath, dll);
+                
+                if (fs.existsSync(sourcePath) && !fs.existsSync(targetPath)) {
+                    try {
+                        fs.copyFileSync(sourcePath, targetPath);
+                        console.log(`Copied ${dll} to app directory`);
+                    } catch (error) {
+                        console.warn(`Failed to copy ${dll}: ${error.message}`);
+                    }
+                }
+            });
+        }
+        
+    } catch (error) {
+        console.error('Error copying DLLs:', error);
+    }
+}
+
+// === APP EVENT HANDLERS ===
+
+// This method will be called when Electron has finished initialization
+app.whenReady().then(() => {
+    initializeApp();
+});
+
+// Quit when all windows are closed
+app.on('window-all-closed', () => {
+    // Cleanup backend server
+    if (backendServer) {
+        console.log('Shutting down backend server...');
+        backendServer.close(() => {
+            console.log('Backend server stopped');
+        });
+    }
+    
+    // On Windows, quit the app
+    if (process.platform !== 'darwin') {
         app.quit();
     }
 });
 
-app.on('window-all-closed', () => {
-    console.log('🛑 All windows closed');
-    app.quit();
-});
-
+// Handle app activation (macOS)
 app.on('activate', () => {
-    // On macOS, re-create window when dock icon is clicked
-    if (BrowserWindow.getAllWindows().length === 0) {
-        createMainWindow();
+    if (mainWindow === null) {
+        createWindow();
     }
 });
 
-app.on('before-quit', (event) => {
-    console.log('🛑 Application shutting down...');
-    
-    // Clean up backend server if needed
-    if (backendServer) {
-        // Your backend server should handle graceful shutdown
-    }
-});
+// Prevent multiple instances
+const gotTheLock = app.requestSingleInstanceLock();
 
-// Security: Prevent new window creation
-app.on('web-contents-created', (event, contents) => {
-    contents.on('new-window', (event, navigationUrl) => {
-        event.preventDefault();
-        shell.openExternal(navigationUrl);
+if (!gotTheLock) {
+    console.log('Another instance is already running, quitting...');
+    app.quit();
+} else {
+    app.on('second-instance', () => {
+        // Someone tried to run a second instance, focus our window instead
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.focus();
+        }
     });
-});
+}
 
-// Handle certificate errors (for development)
+// Handle certificate errors (for local development)
 app.on('certificate-error', (event, webContents, url, error, certificate, callback) => {
-    if (isDev && url.startsWith('http://localhost')) {
-        // In development, ignore certificate errors for localhost
+    if (isDev && url.startsWith('https://localhost')) {
+        // Ignore certificate errors in development
         event.preventDefault();
         callback(true);
-        return;
+    } else {
+        // Use default behavior in production
+        callback(false);
     }
-    
-    // In production, use default behavior
-    callback(false);
 });
 
-// Export for testing
-module.exports = { createMainWindow, startBackendServer };
+// Log unhandled errors
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+    
+    if (app.isReady()) {
+        dialog.showErrorBox(
+            'Unexpected Error',
+            `An unexpected error occurred:\n\n${error.message}\n\nThe application may not function correctly.`
+        );
+    }
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
