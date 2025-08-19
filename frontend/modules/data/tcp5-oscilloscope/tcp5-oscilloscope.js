@@ -44,7 +44,7 @@ class Tcp5Oscilloscope {
         return {
             apiBaseUrl: '/api',
             autoLoad: true,
-            maxPoints: 3000,
+            maxPoints: 20000,
             plotHeight: 600,
             enableAxisScrolling: true,
             
@@ -617,7 +617,7 @@ class Tcp5Oscilloscope {
             const timespan = endTime - startTime;
             const totalDuration = this.state.metadata.timeRange.max - this.state.metadata.timeRange.min;
             const zoomFactor = totalDuration / timespan;
-            const maxPoints = Math.min(5000, Math.max(2000, Math.floor(3000 * Math.sqrt(zoomFactor))));
+            const maxPoints = Math.min(50000, Math.max(20000, Math.floor(50000 * Math.sqrt(zoomFactor))));
             
             console.log(`TCP5 resampling: zoom ${zoomFactor.toFixed(1)}x, ${maxPoints} points`);
             

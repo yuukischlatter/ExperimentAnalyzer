@@ -1,7 +1,7 @@
 /**
  * Database Connection Management
  * SQLite connection and initialization (equivalent to C# IDbConnection setup)
- * MODIFIED: Added ExperimentSummaries.sql schema loading
+ * MODIFIED: Added ExperimentSummaries.sql and ExperimentAlignments.sql schema loading
  */
 
 const sqlite3 = require('sqlite3').verbose();
@@ -35,7 +35,7 @@ function getDatabase() {
 
 /**
  * Initialize database schema (equivalent to C# InitializeDatabaseAsync)
- * MODIFIED: Added experiment summaries schema loading
+ * MODIFIED: Added experiment summaries and alignments schema loading
  */
 async function initializeDatabase() {
     try {
@@ -45,6 +45,7 @@ async function initializeDatabase() {
         const schemaPath = path.join(__dirname, 'schema', 'DatabaseSchema.sql');
         const notesSchemaPath = path.join(__dirname, 'schema', 'ExperimentNotes.sql');
         const summariesSchemaPath = path.join(__dirname, 'schema', 'ExperimentSummaries.sql');
+        const alignmentsSchemaPath = path.join(__dirname, 'schema', 'ExperimentAlignments.sql');
         const indexPath = path.join(__dirname, 'schema', 'Indexes.sql');
 
         // Execute main schema (experiments + metadata tables)
@@ -65,13 +66,22 @@ async function initializeDatabase() {
             console.warn('⚠ ExperimentNotes.sql not found, skipping notes schema creation');
         }
 
-        // Execute experiment summaries schema (NEW)
+        // Execute experiment summaries schema
         if (await fileExists(summariesSchemaPath)) {
             const summariesSchema = await fs.readFile(summariesSchemaPath, 'utf8');
             await executeSQL(database, summariesSchema);
             console.log('✓ Experiment summaries schema created/updated');
         } else {
             console.warn('⚠ ExperimentSummaries.sql not found, skipping summaries schema creation');
+        }
+
+        // Execute experiment alignments schema (NEW)
+        if (await fileExists(alignmentsSchemaPath)) {
+            const alignmentsSchema = await fs.readFile(alignmentsSchemaPath, 'utf8');
+            await executeSQL(database, alignmentsSchema);
+            console.log('✓ Experiment alignments schema created/updated');
+        } else {
+            console.warn('⚠ ExperimentAlignments.sql not found, skipping alignments schema creation');
         }
 
         // Execute indexes
@@ -94,14 +104,15 @@ async function initializeDatabase() {
 }
 
 /**
- * Verify that all critical database tables exist (NEW)
+ * Verify that all critical database tables exist (UPDATED)
  */
 async function verifyDatabaseTables(database) {
     const criticalTables = [
         'experiments',
         'experiment_metadata', 
         'experiment_notes',
-        'experiment_summaries'
+        'experiment_summaries',
+        'experiment_alignments'
     ];
 
     console.log('🔍 Verifying database tables...');
@@ -210,7 +221,7 @@ async function getExperimentCount() {
 }
 
 /**
- * Get summary count (NEW helper function)
+ * Get summary count (helper function)
  */
 async function getSummaryCount() {
     try {
@@ -223,13 +234,27 @@ async function getSummaryCount() {
 }
 
 /**
- * Get database statistics (NEW)
+ * Get alignment count (NEW helper function)
+ */
+async function getAlignmentCount() {
+    try {
+        const result = await querySingleAsync('SELECT COUNT(*) as count FROM experiment_alignments');
+        return result ? result.count : 0;
+    } catch (error) {
+        console.error('Error getting alignment count:', error);
+        return 0;
+    }
+}
+
+/**
+ * Get database statistics (UPDATED)
  */
 async function getDatabaseStats() {
     try {
         const stats = {
             experiments: await getExperimentCount(),
-            summaries: await getSummaryCount()
+            summaries: await getSummaryCount(),
+            alignments: await getAlignmentCount()
         };
         
         // Get notes count
@@ -265,6 +290,7 @@ async function getDatabaseStats() {
             experiments: 0,
             summaries: 0,
             notes: 0,
+            alignments: 0,
             summariesComplete: 0,
             summariesPartial: 0,
             summariesFailed: 0
@@ -312,7 +338,8 @@ module.exports = {
     querySingleAsync,
     executeAsync,
     getExperimentCount,
-    getSummaryCount,        
+    getSummaryCount,
+    getAlignmentCount,        // NEW
     getDatabaseStats,       
     closeDatabase
 };

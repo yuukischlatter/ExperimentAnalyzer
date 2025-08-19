@@ -38,7 +38,7 @@ class TensileStrength {
         return {
             apiBaseUrl: '/api',
             autoLoad: true,
-            maxPoints: 3000,  // Good for materials testing data
+            maxPoints: 8000,  // Good for materials testing data
             plotHeight: 400,
             colors: {
                 main: '#003278',        // Schlatter blue for traces

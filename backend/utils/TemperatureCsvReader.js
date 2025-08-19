@@ -354,7 +354,7 @@ class TemperatureCsvReader {
         console.log(`Found ${timestamps.length} valid data points out of ${rawData.length} total rows`);
         
         // Convert timestamps to relative time
-        const relativeTime = this.convertTimestampsToRelative(timestamps);
+        const relativeTime = timestamps;  // Keep original Unix timestamps!
         
         // Calculate sampling rate
         let samplingRate = 10.0; // Default 10 Hz

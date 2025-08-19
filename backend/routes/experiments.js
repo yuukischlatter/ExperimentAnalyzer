@@ -20,7 +20,10 @@ const ExperimentNotesRepository = require('../repositories/ExperimentNotesReposi
 const ExperimentNotes = require('../models/ExperimentNotes');
 const Hdf5ParserService = require('../services/Hdf5ParserService');
 const ThermalParserService = require('../services/ThermalParserService');
+const AlignmentService = require('../services/AlignmentService');
+const ExperimentAlignmentRepository = require('../repositories/ExperimentAlignmentRepository');
 const { responseMiddleware } = require('../models/ApiResponse');
+
 
 // Apply response middleware to all routes in this router
 router.use(responseMiddleware);
@@ -138,6 +141,16 @@ router.get('/status', async (req, res) => {
                 cachedExperiments: thermalCacheStatus.totalCachedExperiments,
                 cacheTimeout: thermalCacheStatus.cacheTimeoutMs,
                 globalTempMappingLoaded: thermalCacheStatus.globalTempMappingLoaded
+            };
+
+            // ADD ALIGNMENT SERVICE Status
+            const alignmentService = new AlignmentService();
+            const alignmentServiceStatus = alignmentService.getServiceStatus();
+            const alignmentRepository = new ExperimentAlignmentRepository();
+            const alignmentStats = await alignmentRepository.getAlignmentStatsAsync();
+            statusResult.status.alignmentService = {
+                ...alignmentServiceStatus,
+                statistics: alignmentStats
             };
 
             res.success(statusResult.status);
@@ -3801,6 +3814,467 @@ router.get('/:experimentId/thermal-file-info', async (req, res) => {
     } catch (error) {
         console.error(`Error getting thermal file info for ${req.params.experimentId}:`, error);
         res.error(`Failed to get thermal file information: ${error.message}`, 500);
+    }
+});
+
+// #endregion
+
+// #region ALIGNMENT DATA ROUTES
+
+/**
+ * GET /api/experiments/:experimentId/alignment-metadata
+ * Get alignment status and timeline information
+ */
+router.get('/:experimentId/alignment-metadata', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Getting alignment metadata for experiment: ${experimentId}`);
+
+        const alignmentService = new AlignmentService();
+        const metadataResult = await alignmentService.getAlignmentMetadata(experimentId);
+
+        if (!metadataResult.success) {
+            return res.error(metadataResult.error, 500);
+        }
+
+        res.success(metadataResult);
+
+    } catch (error) {
+        console.error(`Error getting alignment metadata for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get alignment metadata: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/alignment-data/:channelId
+ * Get single aligned channel data (binary or temperature)
+ */
+router.get('/:experimentId/alignment-data/:channelId', async (req, res) => {
+    try {
+        const { experimentId, channelId } = req.params;
+        const { 
+            start = 0, 
+            end = null, 
+            maxPoints = 2000 
+        } = req.query;
+
+        const startTime = parseFloat(start);
+        const endTime = end ? parseFloat(end) : null;
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters
+        if (isNaN(startTime) || startTime < 0) {
+            return res.error('Invalid start time parameter', 400);
+        }
+        
+        if (endTime !== null && (isNaN(endTime) || endTime <= startTime)) {
+            return res.error('Invalid end time parameter', 400);
+        }
+        
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
+            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
+        }
+
+        console.log(`Getting aligned channel data for ${experimentId}/${channelId}`);
+
+        const alignmentService = new AlignmentService();
+        const channelResult = await alignmentService.getAlignedChannelData(experimentId, channelId, {
+            startTime: startTime,
+            endTime: endTime,
+            maxPoints: maxPointsInt
+        });
+
+        if (!channelResult.success) {
+            return res.error(channelResult.error, channelResult.error.includes('not found') ? 404 : 500);
+        }
+
+        res.success(channelResult);
+
+    } catch (error) {
+        console.error(`Error getting aligned channel data for ${req.params.experimentId}/${req.params.channelId}:`, error);
+        res.error(`Failed to get aligned channel data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/:experimentId/alignment-data/bulk
+ * Get multiple aligned channels from different sources
+ */
+router.post('/:experimentId/alignment-data/bulk', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { 
+            channelIds, 
+            startTime = 0, 
+            endTime = null, 
+            maxPoints = 2000 
+        } = req.body;
+
+        // Validate request body
+        if (!Array.isArray(channelIds)) {
+            return res.error('channelIds must be an array', 400);
+        }
+
+        if (channelIds.length === 0) {
+            return res.error('channelIds cannot be empty', 400);
+        }
+
+        if (channelIds.length > 20) {
+            return res.error('Maximum 20 channels per request', 400);
+        }
+
+        const startTimeFloat = parseFloat(startTime);
+        const endTimeFloat = endTime ? parseFloat(endTime) : null;
+        const maxPointsInt = parseInt(maxPoints);
+
+        // Validate parameters
+        if (isNaN(startTimeFloat) || startTimeFloat < 0) {
+            return res.error('Invalid startTime parameter', 400);
+        }
+        
+        if (endTimeFloat !== null && (isNaN(endTimeFloat) || endTimeFloat <= startTimeFloat)) {
+            return res.error('Invalid endTime parameter', 400);
+        }
+        
+        if (isNaN(maxPointsInt) || maxPointsInt < 1 || maxPointsInt > 50000) {
+            return res.error('Invalid maxPoints parameter (must be 1-50000)', 400);
+        }
+
+        console.log(`Bulk aligned channel request for ${experimentId}: ${channelIds.length} channels`);
+
+        const alignmentService = new AlignmentService();
+        const bulkResult = await alignmentService.getBulkAlignedData(experimentId, channelIds, {
+            startTime: startTimeFloat,
+            endTime: endTimeFloat,
+            maxPoints: maxPointsInt
+        });
+
+        if (!bulkResult.success) {
+            return res.error(bulkResult.error, 500);
+        }
+
+        res.success(bulkResult);
+
+    } catch (error) {
+        console.error(`Error getting bulk aligned data for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get bulk aligned data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * POST /api/experiments/:experimentId/alignment/calculate
+ * Force recalculation of alignment (admin/debug tool)
+ */
+router.post('/:experimentId/alignment/calculate', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { forceRecalculate = true } = req.query;
+        const forceRecalculateBool = forceRecalculate === 'true' || forceRecalculate === true;
+
+        console.log(`Force calculating alignment for experiment: ${experimentId}`);
+
+        const alignmentService = new AlignmentService();
+        const calculateResult = await alignmentService.calculateAlignment(experimentId, forceRecalculateBool);
+
+        if (!calculateResult.success) {
+            return res.error(calculateResult.message, 500);
+        }
+
+        res.success({
+            message: 'Alignment calculated successfully',
+            experimentId: experimentId,
+            forceRecalculate: forceRecalculateBool,
+            calculatedAt: new Date().toISOString(),
+            ...calculateResult.data
+        });
+
+    } catch (error) {
+        console.error(`Error calculating alignment for ${req.params.experimentId}:`, error);
+        res.error(`Failed to calculate alignment: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/alignment-service/status
+ * Get alignment service status and statistics
+ */
+router.get('/alignment-service/status', async (req, res) => {
+    try {
+        const alignmentService = new AlignmentService();
+        const serviceStatus = alignmentService.getServiceStatus();
+        
+        // Get repository statistics
+        const alignmentRepository = new ExperimentAlignmentRepository();
+        const stats = await alignmentRepository.getAlignmentStatsAsync();
+        
+        res.success({
+            ...serviceStatus,
+            statistics: stats,
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error getting alignment service status:', error);
+        res.error(`Failed to get alignment service status: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/alignment-service/experiments-needing-alignment
+ * Get list of experiments that need alignment calculation (admin tool)
+ */
+router.get('/alignment-service/experiments-needing-alignment', async (req, res) => {
+    try {
+        console.log('Getting experiments needing alignment...');
+
+        const alignmentRepository = new ExperimentAlignmentRepository();
+        const experimentIds = await alignmentRepository.getExperimentsNeedingAlignmentAsync();
+
+        res.success({
+            message: `Found ${experimentIds.length} experiments needing alignment`,
+            experimentIds: experimentIds,
+            count: experimentIds.length,
+            timestamp: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error('Error getting experiments needing alignment:', error);
+        res.error(`Failed to get experiments needing alignment: ${error.message}`, 500);
+    }
+});
+
+/**
+ * DELETE /api/experiments/:experimentId/alignment
+ * Clear alignment data for experiment (forces recalculation on next request)
+ */
+router.delete('/:experimentId/alignment', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+
+        console.log(`Clearing alignment data for experiment: ${experimentId}`);
+
+        const alignmentRepository = new ExperimentAlignmentRepository();
+        const deleteSuccess = await alignmentRepository.deleteAlignmentAsync(experimentId);
+
+        if (!deleteSuccess) {
+            return res.error('No alignment data found to delete', 404);
+        }
+
+        res.success({
+            message: `Alignment data cleared for experiment ${experimentId}`,
+            experimentId: experimentId,
+            clearedAt: new Date().toISOString()
+        });
+
+    } catch (error) {
+        console.error(`Error clearing alignment for ${req.params.experimentId}:`, error);
+        res.error(`Failed to clear alignment: ${error.message}`, 500);
+    }
+});
+
+// #endregion
+// #region DEBUG TIMESTAMP ROUTES (TEMPORARY - FOR ALIGNMENT DEBUGGING)
+
+/**
+ * GET /api/experiments/:experimentId/debug/timestamps
+ * Get raw timestamp information from all sources for debugging alignment
+ */
+router.get('/:experimentId/debug/timestamps', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { samples = 100 } = req.query;
+        const maxSamples = parseInt(samples);
+
+        console.log(`Getting debug timestamps for experiment: ${experimentId}`);
+
+        const debugInfo = {
+            experimentId: experimentId,
+            binary: null,
+            temperature: null,
+            alignment: null
+        };
+
+        // Get binary timestamp info
+        try {
+            const binaryMetadata = await binaryService.getBinaryMetadata(experimentId);
+            if (binaryMetadata.success) {
+                const binaryStartTime = binaryMetadata.rawMetadata?.startTime;
+                debugInfo.binary = {
+                    hasFile: true,
+                    startTime: binaryStartTime ? binaryStartTime.toISOString() : 'Unknown',
+                    startUnix: binaryStartTime ? binaryStartTime.getTime() / 1000 : null,
+                    duration: binaryMetadata.duration,
+                    samplingRate: binaryMetadata.samplingRate,
+                    totalPoints: binaryMetadata.metadata?.totalPoints || 0,
+                    timeRange: binaryMetadata.timeRange,
+                    endTime: binaryStartTime ? new Date(binaryStartTime.getTime() + binaryMetadata.duration * 1000).toISOString() : 'Unknown'
+                };
+            }
+        } catch (error) {
+            debugInfo.binary = { hasFile: false, error: error.message };
+        }
+
+        // Get temperature timestamp info with raw samples
+        try {
+            const tempMetadata = await temperatureService.getTemperatureMetadata(experimentId);
+            if (tempMetadata.success) {
+                const tempChannelData = await temperatureService.getChannelData(experimentId, 'temp_welding', {
+                    startTime: 0,
+                    endTime: tempMetadata.timeRange.max,
+                    maxPoints: maxSamples
+                });
+
+                if (tempChannelData.success) {
+                    const timeArray = tempChannelData.data.time;
+                    const valueArray = tempChannelData.data.values;
+                    
+                    debugInfo.temperature = {
+                        hasFile: true,
+                        fileName: tempMetadata.rawMetadata?.fileName || 'Unknown',
+                        totalPoints: tempMetadata.metadata?.totalPoints || 0,
+                        timeRange: tempMetadata.timeRange,
+                        samplingInfo: {
+                            firstTime: timeArray[0],
+                            lastTime: timeArray[timeArray.length - 1],
+                            sampleCount: timeArray.length,
+                            averageInterval: timeArray.length > 1 ? (timeArray[timeArray.length - 1] - timeArray[0]) / (timeArray.length - 1) : 0
+                        },
+                        samples: {
+                            first10: {
+                                times: Array.from(timeArray.slice(0, 10)),
+                                values: Array.from(valueArray.slice(0, 10))
+                            },
+                            last10: {
+                                times: Array.from(timeArray.slice(-10)),
+                                values: Array.from(valueArray.slice(-10))
+                            }
+                        }
+                    };
+                }
+            }
+        } catch (error) {
+            debugInfo.temperature = { hasFile: false, error: error.message };
+        }
+
+        // Get alignment information
+        try {
+            const alignmentRepository = new ExperimentAlignmentRepository();
+            const alignmentData = await alignmentRepository.getAlignmentAsync(experimentId);
+            if (alignmentData) {
+                debugInfo.alignment = {
+                    exists: true,
+                    masterTimelineStartUnix: alignmentData.master_timeline_start_unix,
+                    masterTimelineStartDate: new Date(alignmentData.master_timeline_start_unix * 1000).toISOString(),
+                    durationS: alignmentData.master_timeline_duration_s,
+                    temperatureOffset: alignmentData.temperature_alignment_offset_s,
+                    calculatedAt: alignmentData.calculated_at,
+                    timezoneOffsetApplied: 7200 // 2 hours in seconds
+                };
+            } else {
+                debugInfo.alignment = { exists: false };
+            }
+        } catch (error) {
+            debugInfo.alignment = { exists: false, error: error.message };
+        }
+
+        res.success(debugInfo);
+
+    } catch (error) {
+        console.error(`Error getting debug timestamps for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get debug timestamps: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/debug/temperature-raw
+ * Get raw temperature data with original information
+ */
+router.get('/:experimentId/debug/temperature-raw', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { maxPoints = 100 } = req.query;
+
+        console.log(`Getting raw temperature data for experiment: ${experimentId}`);
+
+        const tempService = new TemperatureCsvService();
+        const parseResult = await tempService.parseExperimentTemperatureFile(experimentId);
+        
+        if (!parseResult.success) {
+            return res.error(parseResult.message, 500);
+        }
+
+        const tempChannelData = await tempService.getChannelData(experimentId, 'temp_welding', {
+            startTime: 0,
+            endTime: null,
+            maxPoints: parseInt(maxPoints)
+        });
+
+        if (!tempChannelData.success) {
+            return res.error(tempChannelData.error, 500);
+        }
+
+        res.success({
+            experimentId: experimentId,
+            channelId: 'temp_welding',
+            sampledPoints: tempChannelData.data.time.length,
+            data: {
+                relativeTimes: Array.from(tempChannelData.data.time),
+                values: Array.from(tempChannelData.data.values)
+            },
+            metadata: {
+                ...tempChannelData.metadata,
+                note: "These are relative times (seconds from start). CSV reader converts Unix timestamps to relative time during parsing."
+            }
+        });
+
+    } catch (error) {
+        console.error(`Error getting raw temperature data for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get raw temperature data: ${error.message}`, 500);
+    }
+});
+
+/**
+ * GET /api/experiments/:experimentId/debug/binary-raw
+ * Get raw binary data timestamps and basic info
+ */
+router.get('/:experimentId/debug/binary-raw', async (req, res) => {
+    try {
+        const { experimentId } = req.params;
+        const { channelId = 'calc_5', maxPoints = 100 } = req.query;
+
+        console.log(`Getting raw binary data for experiment: ${experimentId}, channel: ${channelId}`);
+
+        const binaryResult = await binaryService.getChannelData(experimentId, channelId, {
+            startTime: 0,
+            endTime: 10, // Just first 10 seconds for debugging
+            maxPoints: parseInt(maxPoints)
+        });
+
+        if (!binaryResult.success) {
+            return res.error(binaryResult.error, 500);
+        }
+
+        const metadataResult = await binaryService.getBinaryMetadata(experimentId);
+        
+        res.success({
+            experimentId: experimentId,
+            channelId: channelId,
+            sampledPoints: binaryResult.data.time.length,
+            data: {
+                times: Array.from(binaryResult.data.time),
+                values: Array.from(binaryResult.data.values)
+            },
+            metadata: {
+                ...binaryResult.metadata,
+                fileTimestamp: metadataResult.success ? metadataResult.rawMetadata?.startTime : null,
+                note: "These are relative times (seconds from start of recording)"
+            }
+        });
+
+    } catch (error) {
+        console.error(`Error getting raw binary data for ${req.params.experimentId}:`, error);
+        res.error(`Failed to get raw binary data: ${error.message}`, 500);
     }
 });
 

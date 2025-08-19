@@ -33,7 +33,7 @@ class Acceleration {
         return {
             apiBaseUrl: '/api',
             autoLoad: true,
-            maxPoints: 4000,  // Higher for acceleration data
+            maxPoints: 6000,  // Higher for acceleration data
             plotHeight: 600,
             colors: {
                 acc_x: '#FF0000',  // Red for X-axis

@@ -41,7 +41,7 @@ class BinOscilloscope {
         return {
             apiBaseUrl: '/api',
             autoLoad: true,
-            maxPoints: 3000,
+            maxPoints: 8000,
             plotHeight: 600,
             enableAxisScrolling: true,
             colors: {

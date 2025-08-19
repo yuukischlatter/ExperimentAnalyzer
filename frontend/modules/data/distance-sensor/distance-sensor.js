@@ -33,7 +33,7 @@ class DistanceSensor {
         return {
             apiBaseUrl: '/api',
             autoLoad: true,
-            maxPoints: 4000,  // Higher for interpolated 1ms data
+            maxPoints: 8000,  // Higher for interpolated 1ms data
             plotHeight: 600,
             colors: {
                 pos_x: '#1976D2'  // Primary blue for position data

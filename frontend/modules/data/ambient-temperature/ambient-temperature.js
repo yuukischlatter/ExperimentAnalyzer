@@ -33,7 +33,7 @@ class AmbientTemperature {
         return {
             apiBaseUrl: '/api',
             autoLoad: true,
-            maxPoints: 3000,
+            maxPoints: 8000,
             plotHeight: 600,
             colors: {
                 temp_welding: '#D84315',      // Deep orange-red - primary welding temperature
